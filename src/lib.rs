@@ -5,6 +5,7 @@ use std::io;
 
 use crate::data::AsDataManager;
 
+#[async_recursion::async_recursion]
 async fn get_all_by_path(dm: &mut impl AsDataManager, mut path: Path) -> io::Result<Vec<String>> {
     if path.step_v.is_empty() {
         if path.root.is_empty() {
@@ -96,6 +97,7 @@ async fn dump_inc_v(dm: &mut impl AsDataManager, function: &str) -> io::Result<V
     Ok(inc_v)
 }
 
+#[async_recursion::async_recursion]
 async fn invoke_inc(dm: &mut impl AsDataManager, root: &str, inc: &Inc) -> io::Result<()> {
     log::debug!("invoke_inc: {:?}", inc);
     let input_item_v = get_all_by_path(dm, Path::from_str(&inc.input)).await?;
@@ -210,6 +212,7 @@ fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
     }
 }
 
+#[async_recursion::async_recursion]
 async fn execute(
     dm: &mut impl AsDataManager,
     input: &str,
