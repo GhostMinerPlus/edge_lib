@@ -232,10 +232,11 @@ async fn execute(
                 vec![input.to_string()],
             )
             .await?;
-            let rs = invoke_inc_v(dm, &root, &parse_script(script)?).await?;
+            let (name, inc_v) = parse_script(script)?;
+            let rs = invoke_inc_v(dm, &root, &inc_v).await?;
             if v.is_empty() {
                 let rs: json::JsonValue = rs.into();
-                let _ = out_tree.insert(script, rs);
+                let _ = out_tree.insert(&name, rs);
             } else {
                 // fork
                 let mut cur = json::object! {};
@@ -255,15 +256,25 @@ async fn execute(
     }
 }
 
-fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
+fn parse_script(script: &str) -> io::Result<(String, Vec<Inc>)> {
     let mut inc_v = Vec::new();
+    let mut name = None;
     for line in script.lines() {
         if line.is_empty() {
             continue;
         }
-        // <output> <operator> <function> <input>
+        if name.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "while parsing script",
+            ));
+        }
+        // <output> <operator> <function> <input> <input1>
         let word_v: Vec<&str> = line.split(" ").collect();
-        if word_v.len() != 5 {
+        if word_v.len() == 1 {
+            name = Some(word_v[0].to_string());
+            continue;
+        } else if word_v.len() != 5 {
             log::error!("while parsing script: word_v.len() != 5");
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -278,26 +289,25 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
             input1: word_v[4].trim().to_string(),
         });
     }
-    Ok(inc_v)
+    match name {
+        Some(name) => Ok((name, inc_v)),
+        None => Ok((script.to_string(), inc_v))
+    }
 }
-
-// Public
-pub mod data;
-pub mod mem_table;
 
 #[derive(Clone)]
-pub struct Step {
-    pub arrow: String,
-    pub code: String,
+struct Step {
+    arrow: String,
+    code: String,
 }
 
-pub struct Path {
-    pub root: String,
-    pub step_v: Vec<Step>,
+struct Path {
+    root: String,
+    step_v: Vec<Step>,
 }
 
 impl Path {
-    pub fn from_str(path: &str) -> Self {
+    fn from_str(path: &str) -> Self {
         if path.is_empty() {
             return Path {
                 root: String::new(),
@@ -338,13 +348,17 @@ impl Path {
 }
 
 #[derive(Clone, Deserialize, Debug)]
-pub struct Inc {
+struct Inc {
     pub output: String,
     pub operator: String,
     pub function: String,
     pub input: String,
     pub input1: String,
 }
+
+// Public
+pub mod data;
+pub mod mem_table;
 
 pub trait AsEdgeEngine {
     fn execute(&mut self, script_tree: &json::JsonValue) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
