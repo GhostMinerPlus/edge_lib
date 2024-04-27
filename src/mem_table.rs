@@ -22,6 +22,7 @@ pub struct Edge {
     is_temp: bool,
 }
 
+#[derive(Clone)]
 pub struct MemTable {
     id: u64,
     edge_mp: BTreeMap<u64, Edge>,
