@@ -40,27 +40,6 @@ impl MemTable {
         }
     }
 
-    pub fn append_exists_edge(&mut self, source: &str, code: &str, target: &str) {
-        let edge = Edge {
-            source: source.to_string(),
-            code: code.to_string(),
-            target: target.to_string(),
-            is_temp: true,
-        };
-        let uuid = next_id(&mut self.id);
-        self.edge_mp.insert(uuid, edge);
-        insert(
-            &mut self.inx_source_code,
-            (source.to_string(), code.to_string()),
-            uuid,
-        );
-        insert(
-            &mut self.inx_code_target,
-            (code.to_string(), target.to_string()),
-            uuid,
-        );
-    }
-
     pub fn insert_edge(&mut self, source: &str, code: &str, target: &str) -> u64 {
         let uuid = next_id(&mut self.id);
         let edge = Edge {
