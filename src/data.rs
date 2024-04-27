@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    io,
-    mem::take,
-    sync::Arc,
-};
+use std::{collections::HashSet, io, mem::take, sync::Arc};
 
 use tokio::sync::Mutex;
 

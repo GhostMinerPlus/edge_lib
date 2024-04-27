@@ -291,7 +291,7 @@ fn parse_script(script: &str) -> io::Result<(String, Vec<Inc>)> {
     }
     match name {
         Some(name) => Ok((name, inc_v)),
-        None => Ok((script.to_string(), inc_v))
+        None => Ok((script.to_string(), inc_v)),
     }
 }
 
@@ -361,7 +361,10 @@ pub mod data;
 pub mod mem_table;
 
 pub trait AsEdgeEngine {
-    fn execute(&mut self, script_tree: &json::JsonValue) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
+    fn execute(
+        &mut self,
+        script_tree: &json::JsonValue,
+    ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
 
     fn commit(&mut self) -> impl std::future::Future<Output = io::Result<()>> + Send;
 }
@@ -390,149 +393,25 @@ impl<DM: AsDataManager> AsEdgeEngine for EdgeEngine<DM> {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
+    use std::sync::Arc;
 
-    use crate::{data::AsDataManager, mem_table::MemTable};
+    use tokio::sync::Mutex;
+
+    use crate::{data::DataManager, mem_table::MemTable};
 
     use super::{AsEdgeEngine, EdgeEngine};
-
-    fn is_temp(source: &str, code: &str, target: &str) -> bool {
-        source.starts_with('$') || code.starts_with('$') || target.starts_with('$')
-    }
-
-    struct FakeDataManager {
-        mem_table: MemTable,
-    }
-
-    impl FakeDataManager {
-        pub fn new() -> Self {
-            Self {
-                mem_table: MemTable::new(),
-            }
-        }
-    }
-
-    impl AsDataManager for FakeDataManager {
-        fn get_target(
-            &mut self,
-            source: &str,
-            code: &str,
-        ) -> impl std::future::Future<Output = std::io::Result<String>> + Send {
-            async {
-                if let Some(target) = self.mem_table.get_target(source, code) {
-                    Ok(target)
-                } else {
-                    Ok(String::new())
-                }
-            }
-        }
-
-        fn get_source(
-            &mut self,
-            code: &str,
-            target: &str,
-        ) -> impl std::future::Future<Output = std::io::Result<String>> + Send {
-            async {
-                if let Some(source) = self.mem_table.get_source(code, target) {
-                    Ok(source)
-                } else {
-                    Ok(String::new())
-                }
-            }
-        }
-
-        async fn get_target_v(&mut self, source: &str, code: &str) -> std::io::Result<Vec<String>> {
-            Ok(self.mem_table.get_target_v_unchecked(source, code))
-        }
-
-        async fn commit(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-
-        fn get_source_v(
-            &mut self,
-            _code: &str,
-            _target: &str,
-        ) -> impl std::future::Future<Output = std::io::Result<Vec<String>>> + Send {
-            async { todo!() }
-        }
-
-        async fn append_target_v(
-            &mut self,
-            source: &str,
-            code: &str,
-            target_v: &Vec<String>,
-        ) -> io::Result<()> {
-            for target in target_v {
-                if is_temp(source, code, target) {
-                    self.mem_table.insert_temp_edge(source, code, target);
-                } else {
-                    self.mem_table.insert_edge(source, code, target);
-                }
-            }
-            Ok(())
-        }
-
-        async fn append_source_v(
-            &mut self,
-            source_v: &Vec<String>,
-            code: &str,
-            target: &str,
-        ) -> io::Result<()> {
-            for source in source_v {
-                if is_temp(source, code, target) {
-                    self.mem_table.insert_temp_edge(source, code, target);
-                } else {
-                    self.mem_table.insert_edge(source, code, target);
-                }
-            }
-            Ok(())
-        }
-
-        async fn set_target_v(
-            &mut self,
-            source: &str,
-            code: &str,
-            target_v: &Vec<String>,
-        ) -> io::Result<()> {
-            self.mem_table.delete_edge_with_source_code(source, code);
-            for target in target_v {
-                if is_temp(source, code, target) {
-                    self.mem_table.insert_temp_edge(source, code, target);
-                } else {
-                    self.mem_table.insert_edge(source, code, target);
-                }
-            }
-            Ok(())
-        }
-
-        async fn set_source_v(
-            &mut self,
-            source_v: &Vec<String>,
-            code: &str,
-            target: &str,
-        ) -> io::Result<()> {
-            self.mem_table.delete_edge_with_code_target(code, target);
-            for source in source_v {
-                if is_temp(source, code, target) {
-                    self.mem_table.insert_temp_edge(source, code, target);
-                } else {
-                    self.mem_table.insert_edge(source, code, target);
-                }
-            }
-            Ok(())
-        }
-    }
 
     #[test]
     fn test() {
         let task = async {
-            let dm = FakeDataManager::new();
-            let root = format!(
-                "$->$left = new 100 100
-$->$right = new 100 100
-$->$output = + $->$left $->$right"
-            );
+            let global = Arc::new(Mutex::new(MemTable::new()));
+            let dm = DataManager::with_global(global);
+            let root = [
+                "$->$left = new 100 100",
+                "$->$right = new 100 100",
+                "$->$output = + $->$left $->$right",
+            ]
+            .join("\n");
             let then = format!("$->$output = rand $->$input _");
             let then_tree = json::object! {};
             let mut root_tree = json::object! {};
