@@ -112,6 +112,7 @@ async fn invoke_inc(dm: &mut impl AsDataManager, root: &str, inc: &Inc) -> io::R
         "distinct" => inc::distinct(dm, input_item_v, input1_item_v).await?,
         "left" => inc::left(dm, input_item_v, input1_item_v).await?,
         "inner" => inc::inner(dm, input_item_v, input1_item_v).await?,
+        "if" => inc::if_(dm, input_item_v, input1_item_v).await?,
         //
         "+" => inc::add(dm, input_item_v, input1_item_v).await?,
         "-" => inc::minus(dm, input_item_v, input1_item_v).await?,

@@ -54,6 +54,18 @@ pub async fn inner(
         .collect())
 }
 
+pub async fn if_(
+    _: &mut impl AsDataManager,
+    input_item_v: Vec<String>,
+    input1_item_v: Vec<String>,
+) -> io::Result<Vec<String>> {
+    if input_item_v.is_empty() {
+        Ok(input1_item_v)
+    } else {
+        Ok(input_item_v)
+    }
+}
+
 pub async fn set(
     _: &mut impl AsDataManager,
     input_item_v: Vec<String>,
