@@ -60,7 +60,14 @@ async fn asign(
     item_v: Vec<String>,
 ) -> io::Result<()> {
     let mut output_path = Path::from_str(output);
-    let last_step = output_path.step_v.pop().unwrap();
+    let last_step = match output_path.step_v.pop() {
+        Some(step) => step,
+        None => {
+            let e = io::Error::other("invalid path");
+            log::error!("{e}: {output}");
+            return Err(io::Error::other(e));
+        }
+    };
     let root_v = get_all_by_path(dm, output_path).await?;
     if last_step.arrow == "->" {
         for source in &root_v {
