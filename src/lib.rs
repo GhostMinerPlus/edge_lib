@@ -402,9 +402,7 @@ impl<DM: AsDataManager> AsEdgeEngine for EdgeEngine<DM> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use tokio::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use crate::{data::DataManager, mem_table::MemTable};
 

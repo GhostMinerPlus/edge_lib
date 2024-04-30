@@ -1,6 +1,8 @@
-use std::{collections::HashSet, io, mem::take, sync::Arc};
-
-use tokio::sync::Mutex;
+use std::{
+    collections::HashSet,
+    io, mem,
+    sync::{Arc, Mutex},
+};
 
 use crate::mem_table::MemTable;
 
@@ -97,7 +99,7 @@ impl AsDataManager for DataManager {
             if let Some(target) = self.cache.get_target(source, code) {
                 Ok(target)
             } else {
-                let global = self.global.lock().await;
+                let global = self.global.lock().unwrap();
                 match global.get_target(source, code) {
                     Some(target) => Ok(target),
                     None => Ok(String::new()),
@@ -115,7 +117,7 @@ impl AsDataManager for DataManager {
             if let Some(source) = self.cache.get_source(code, target) {
                 Ok(source)
             } else {
-                let global = self.global.lock().await;
+                let global = self.global.lock().unwrap();
                 match global.get_source(code, target) {
                     Some(source) => Ok(source),
                     None => Ok(String::new()),
@@ -127,7 +129,7 @@ impl AsDataManager for DataManager {
     async fn get_target_v(&mut self, source: &str, code: &str) -> std::io::Result<Vec<String>> {
         let rs = self.cache.get_target_v_unchecked(source, code);
         if rs.is_empty() {
-            let mut global = self.global.lock().await;
+            let mut global = self.global.lock().unwrap();
             let rs = global.get_target_v_unchecked(source, code);
             for target in &rs {
                 self.cache.insert_temp_edge(source, code, target);
@@ -139,11 +141,11 @@ impl AsDataManager for DataManager {
     }
 
     async fn commit(&mut self) -> std::io::Result<()> {
-        let mut global = self.global.lock().await;
-        for (source, code) in take(&mut self.delete_list_by_source) {
+        let mut global = self.global.lock().unwrap();
+        for (source, code) in mem::take(&mut self.delete_list_by_source) {
             global.delete_edge_with_source_code(&source, &code);
         }
-        for (code, target) in take(&mut self.delete_list_by_target) {
+        for (code, target) in mem::take(&mut self.delete_list_by_target) {
             global.delete_edge_with_code_target(&code, &target);
         }
         for (_, edge) in self.cache.take() {
@@ -155,7 +157,7 @@ impl AsDataManager for DataManager {
     async fn get_source_v(&mut self, code: &str, target: &str) -> std::io::Result<Vec<String>> {
         let rs = self.cache.get_source_v_unchecked(code, target);
         if rs.is_empty() {
-            let mut global = self.global.lock().await;
+            let mut global = self.global.lock().unwrap();
             let rs = global.get_source_v_unchecked(code, target);
             for source in &rs {
                 self.cache.insert_temp_edge(source, code, target);
@@ -178,7 +180,7 @@ impl AsDataManager for DataManager {
             }
         } else {
             if let None = self.cache.get_target(source, code) {
-                let mut global = self.global.lock().await;
+                let mut global = self.global.lock().unwrap();
                 let rs = global.get_target_v_unchecked(source, code);
                 for target in &rs {
                     self.cache.insert_temp_edge(source, code, target);
@@ -203,7 +205,7 @@ impl AsDataManager for DataManager {
             }
         } else {
             if let None = self.cache.get_source(code, target) {
-                let mut global = self.global.lock().await;
+                let mut global = self.global.lock().unwrap();
                 let rs = global.get_source_v_unchecked(code, target);
                 for source in &rs {
                     self.cache.insert_temp_edge(source, code, target);
