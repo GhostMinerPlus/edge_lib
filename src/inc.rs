@@ -214,6 +214,21 @@ pub async fn equal(
     Ok(output_item_v)
 }
 
+pub async fn not_equal(
+    _: &mut impl AsDataManager,
+    input_item_v: Vec<String>,
+    input1_item_v: Vec<String>,
+) -> io::Result<Vec<String>> {
+    let sz = min(input_item_v.len(), input1_item_v.len());
+    let mut output_item_v = Vec::with_capacity(sz);
+    for i in 0..sz {
+        if input_item_v[i] != input1_item_v[i] {
+            output_item_v.push(input_item_v[i].clone());
+        }
+    }
+    Ok(output_item_v)
+}
+
 pub async fn greater(
     _: &mut impl AsDataManager,
     input_item_v: Vec<String>,

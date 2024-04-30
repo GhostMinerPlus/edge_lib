@@ -121,6 +121,7 @@ async fn invoke_inc(dm: &mut impl AsDataManager, root: &str, inc: &Inc) -> io::R
         "%" => inc::rest(dm, input_item_v, input1_item_v).await?,
         //
         "==" => inc::equal(dm, input_item_v, input1_item_v).await?,
+        "!=" => inc::not_equal(dm, input_item_v, input1_item_v).await?,
         ">" => inc::greater(dm, input_item_v, input1_item_v).await?,
         "<" => inc::smaller(dm, input_item_v, input1_item_v).await?,
         //
