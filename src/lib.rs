@@ -439,4 +439,30 @@ mod tests {
             .unwrap()
             .block_on(task);
     }
+
+    #[test]
+    fn test_if() {
+        let task = async {
+            let global = Arc::new(Mutex::new(MemTable::new()));
+            let dm = DataManager::with_global(global);
+            let mut edge_engine = EdgeEngine::new(dm);
+            let script = [
+                "$->$server_exists = inner root->web_server huiwen<-name",
+                "$->$web_server = if $->$server_exists ?",
+                "$->$output = = $->$web_server _",
+                "info",
+            ]
+            .join("\\n");
+            let rs = edge_engine
+                .execute(&json::parse(&format!("{{\"{script}\": null}}")).unwrap())
+                .await
+                .unwrap();
+            assert!(!rs["info"].is_empty());
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
 }
