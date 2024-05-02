@@ -402,17 +402,14 @@ impl<DM: AsDataManager> AsEdgeEngine for EdgeEngine<DM> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use crate::{data::DataManager, mem_table::MemTable};
+    use crate::data::DataManager;
 
     use super::{AsEdgeEngine, EdgeEngine};
 
     #[test]
     fn test() {
         let task = async {
-            let global = Arc::new(Mutex::new(MemTable::new()));
-            let dm = DataManager::with_global(global);
+            let dm = DataManager::new();
             let root = [
                 "$->$left = new 100 100",
                 "$->$right = new 100 100",
@@ -443,8 +440,7 @@ mod tests {
     #[test]
     fn test_if() {
         let task = async {
-            let global = Arc::new(Mutex::new(MemTable::new()));
-            let dm = DataManager::with_global(global);
+            let dm = DataManager::new();
             let mut edge_engine = EdgeEngine::new(dm);
             let script = [
                 "$->$server_exists = inner root->web_server huiwen<-name",
