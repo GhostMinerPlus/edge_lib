@@ -11,7 +11,7 @@ fn is_temp(code: &str) -> bool {
 }
 
 // Public
-pub trait AsDataManager: Send {
+pub trait AsDataManager: Send + Clone {
     fn append_target_v(
         &mut self,
         source: &str,
@@ -79,9 +79,20 @@ pub struct DataManager {
 }
 
 impl DataManager {
-    pub fn with_global(global: Arc<Mutex<MemTable>>) -> Self {
+    pub fn new() -> Self {
         Self {
-            global,
+            global: Arc::new(Mutex::new(MemTable::new())),
+            cache: MemTable::new(),
+            delete_list_by_source: Default::default(),
+            delete_list_by_target: Default::default(),
+        }
+    }
+}
+
+impl Clone for DataManager {
+    fn clone(&self) -> Self {
+        Self {
+            global: self.global.clone(),
             cache: MemTable::new(),
             delete_list_by_source: HashSet::new(),
             delete_list_by_target: HashSet::new(),
