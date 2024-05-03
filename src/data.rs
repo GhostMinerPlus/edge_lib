@@ -12,7 +12,7 @@ fn is_temp(code: &str) -> bool {
 }
 
 // Public
-pub trait AsDataManager: Send {
+pub trait AsDataManager: Send + Sync {
     fn divide(&self) -> Box<dyn AsDataManager>;
 
     fn append_target_v(
