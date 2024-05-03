@@ -257,7 +257,7 @@ async fn execute(
                     execute(dm, input, v, &mut sub_out_tree).await?;
                     merge(&mut cur, &mut sub_out_tree);
                 }
-                let _ = out_tree.insert(script, cur);
+                let _ = out_tree.insert(&name, cur);
             }
         }
         Ok(())
