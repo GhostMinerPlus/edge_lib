@@ -6,7 +6,10 @@ use std::io;
 use crate::data::AsDataManager;
 
 #[async_recursion::async_recursion]
-async fn get_all_by_path(dm: &mut impl AsDataManager, mut path: Path) -> io::Result<Vec<String>> {
+async fn get_all_by_path(
+    dm: &mut Box<dyn AsDataManager>,
+    mut path: Path,
+) -> io::Result<Vec<String>> {
     if path.step_v.is_empty() {
         if path.root.is_empty() {
             return Ok(Vec::new());
@@ -54,7 +57,7 @@ async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
 }
 
 async fn asign(
-    dm: &mut impl AsDataManager,
+    dm: &mut Box<dyn AsDataManager>,
     output: &str,
     operator: &str,
     item_v: Vec<String>,
@@ -89,7 +92,7 @@ async fn asign(
     Ok(())
 }
 
-async fn dump_inc_v(dm: &mut impl AsDataManager, function: &str) -> io::Result<Vec<Inc>> {
+async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
     let inc_h_v = dm.get_target_v(function, "inc").await?;
     let mut inc_v = Vec::with_capacity(inc_h_v.len());
     for inc_h in &inc_h_v {
@@ -105,7 +108,7 @@ async fn dump_inc_v(dm: &mut impl AsDataManager, function: &str) -> io::Result<V
 }
 
 #[async_recursion::async_recursion]
-async fn invoke_inc(dm: &mut impl AsDataManager, root: &str, inc: &Inc) -> io::Result<()> {
+async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<()> {
     log::debug!("invoke_inc: {:?}", inc);
     let input_item_v = get_all_by_path(dm, Path::from_str(&inc.input)).await?;
     let input1_item_v = get_all_by_path(dm, Path::from_str(&inc.input1)).await?;
@@ -154,7 +157,7 @@ async fn invoke_inc(dm: &mut impl AsDataManager, root: &str, inc: &Inc) -> io::R
     asign(dm, &inc.output, &inc.operator, rs).await
 }
 
-async fn get_one(dm: &mut impl AsDataManager, root: &str, id: &str) -> io::Result<String> {
+async fn get_one(dm: &mut Box<dyn AsDataManager>, root: &str, id: &str) -> io::Result<String> {
     let path = unwrap_value(root, id).await?;
     let id_v = get_all_by_path(dm, Path::from_str(&path)).await?;
     if id_v.len() != 1 {
@@ -163,7 +166,7 @@ async fn get_one(dm: &mut impl AsDataManager, root: &str, id: &str) -> io::Resul
     Ok(id_v[0].clone())
 }
 
-async fn unwrap_inc(dm: &mut impl AsDataManager, root: &str, inc: &Inc) -> io::Result<Inc> {
+async fn unwrap_inc(dm: &mut Box<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<Inc> {
     let inc = Inc {
         output: unwrap_value(root, &inc.output).await?,
         operator: get_one(dm, root, &inc.operator).await?,
@@ -193,7 +196,7 @@ fn find_arrrow(path: &str) -> usize {
 }
 
 async fn invoke_inc_v(
-    dm: &mut impl AsDataManager,
+    dm: &mut Box<dyn AsDataManager>,
     root: &str,
     inc_v: &Vec<Inc>,
 ) -> io::Result<Vec<String>> {
@@ -223,7 +226,7 @@ fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
 
 #[async_recursion::async_recursion]
 async fn execute(
-    dm: &mut impl AsDataManager,
+    dm: &mut Box<dyn AsDataManager>,
     input: &str,
     script_tree: &json::JsonValue,
     out_tree: &mut json::JsonValue,
@@ -378,17 +381,17 @@ pub trait AsEdgeEngine {
     fn commit(&mut self) -> impl std::future::Future<Output = io::Result<()>> + Send;
 }
 
-pub struct EdgeEngine<DM: AsDataManager> {
-    dm: DM,
+pub struct EdgeEngine {
+    dm: Box<dyn AsDataManager>,
 }
 
-impl<DM: AsDataManager> EdgeEngine<DM> {
-    pub fn new(dm: DM) -> Self {
+impl EdgeEngine {
+    pub fn new(dm: Box<dyn AsDataManager>) -> Self {
         Self { dm }
     }
 }
 
-impl<DM: AsDataManager> AsEdgeEngine for EdgeEngine<DM> {
+impl AsEdgeEngine for EdgeEngine {
     async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
         execute(&mut self.dm, "", &script_tree, &mut out_tree).await?;
@@ -423,7 +426,7 @@ mod tests {
             let mut script_tree = json::object! {};
             let _ = script_tree.insert(&root, root_tree);
 
-            let mut edge_engine = EdgeEngine::new(dm);
+            let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine.execute(&script_tree).await.unwrap();
             edge_engine.commit().await.unwrap();
             let rs = &rs[&root][&then];
@@ -441,7 +444,7 @@ mod tests {
     fn test_if() {
         let task = async {
             let dm = DataManager::new();
-            let mut edge_engine = EdgeEngine::new(dm);
+            let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let script = [
                 "$->$server_exists = inner root->web_server huiwen<-name",
                 "$->$web_server = if $->$server_exists ?",

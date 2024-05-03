@@ -6,7 +6,7 @@ use crate::data::AsDataManager;
 
 // Public
 pub async fn append(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     mut input_item_v: Vec<String>,
     mut input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -15,7 +15,7 @@ pub async fn append(
 }
 
 pub async fn distinct(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -27,7 +27,7 @@ pub async fn distinct(
 }
 
 pub async fn left(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -41,7 +41,7 @@ pub async fn left(
 }
 
 pub async fn inner(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -55,7 +55,7 @@ pub async fn inner(
 }
 
 pub async fn if_(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -67,7 +67,7 @@ pub async fn if_(
 }
 
 pub async fn set(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -75,7 +75,7 @@ pub async fn set(
 }
 
 pub async fn sort(
-    dm: &mut impl AsDataManager,
+    dm: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -90,7 +90,7 @@ pub async fn sort(
 }
 
 pub async fn add(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -112,7 +112,7 @@ pub async fn add(
 }
 
 pub async fn minus(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -134,7 +134,7 @@ pub async fn minus(
 }
 
 pub async fn mul(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -156,7 +156,7 @@ pub async fn mul(
 }
 
 pub async fn div(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -178,7 +178,7 @@ pub async fn div(
 }
 
 pub async fn rest(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -200,7 +200,7 @@ pub async fn rest(
 }
 
 pub async fn equal(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -215,7 +215,7 @@ pub async fn equal(
 }
 
 pub async fn not_equal(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -230,7 +230,7 @@ pub async fn not_equal(
 }
 
 pub async fn greater(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -253,7 +253,7 @@ pub async fn greater(
 }
 
 pub async fn smaller(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -276,7 +276,7 @@ pub async fn smaller(
 }
 
 pub async fn new(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     input1_item_v: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -294,7 +294,7 @@ pub async fn new(
 }
 
 pub async fn line(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -312,7 +312,7 @@ pub async fn line(
 }
 
 pub async fn rand(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -331,7 +331,7 @@ pub async fn rand(
 }
 
 pub async fn count(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
@@ -341,7 +341,7 @@ pub async fn count(
 }
 
 pub async fn sum(
-    _: &mut impl AsDataManager,
+    _: &mut Box<dyn AsDataManager>,
     input_item_v: Vec<String>,
     _: Vec<String>,
 ) -> io::Result<Vec<String>> {
