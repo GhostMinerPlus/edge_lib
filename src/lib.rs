@@ -262,10 +262,43 @@ async fn execute(
         }
         Ok(())
     } else {
-        let msg = format!("can not parse {}", script_tree);
-        log::error!("{msg}");
-        Err(io::Error::new(io::ErrorKind::InvalidData, msg))
+        Err(io::Error::other(
+            "when execute:\n\tcan not parse [script_tree]",
+        ))
     }
+}
+
+fn escape_word(word: &str) -> String {
+    let mut word = word.replace("\\'", "'");
+    if word.starts_with('\'') && word.ends_with('\'') {
+        word = word[1..word.len()-1].to_string();
+    }
+    word
+}
+
+fn split_line(line: &str) -> Vec<String> {
+    let part_v: Vec<&str> = line.split(' ').collect();
+    if part_v.len() <= 5 {
+        return part_v.into_iter().map(escape_word).collect();
+    }
+
+    let mut word_v = Vec::with_capacity(5);
+    let mut entered = false;
+    for part in part_v {
+        if entered {
+            *word_v.last_mut().unwrap() = format!("{} {part}", word_v.last().unwrap());
+            if part.ends_with('\'') && !part.ends_with("\\'") {
+                entered = false;
+            }
+        } else {
+            word_v.push(part.to_string());
+            if part.starts_with('\'') {
+                entered = true;
+            }
+        }
+    }
+
+    return word_v.iter().map(|word| escape_word(word)).collect();
 }
 
 fn parse_script(script: &str) -> io::Result<(String, Vec<Inc>)> {
@@ -276,21 +309,18 @@ fn parse_script(script: &str) -> io::Result<(String, Vec<Inc>)> {
             continue;
         }
         if name.is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "while parsing script",
+            return Err(io::Error::other(
+                "when parse_script:\n\tname already exists",
             ));
         }
-        // <output> <operator> <function> <input> <input1>
-        let word_v: Vec<&str> = line.split(" ").collect();
+
+        let word_v = split_line(line);
         if word_v.len() == 1 {
             name = Some(word_v[0].to_string());
             continue;
         } else if word_v.len() != 5 {
-            log::error!("while parsing script: word_v.len() != 5");
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "while parsing script",
+            return Err(io::Error::other(
+                "when parse_script:\n\tmore than 5 words in a line",
             ));
         }
         inc_v.push(Inc {
@@ -457,6 +487,29 @@ mod tests {
                 .await
                 .unwrap();
             assert!(!rs["info"].is_empty());
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
+
+    #[test]
+    fn test_space() {
+        let task = async {
+            let dm = DataManager::new();
+            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            let script = [
+                "$->$output = + '1 ' 1",
+                "result",
+            ]
+            .join("\\n");
+            let rs = edge_engine
+                .execute(&json::parse(&format!("{{\"{script}\": null}}")).unwrap())
+                .await
+                .unwrap();
+            assert!(rs["result"][0].as_str() == Some("2"));
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
