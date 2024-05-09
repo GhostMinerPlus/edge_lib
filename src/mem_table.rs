@@ -1,10 +1,15 @@
-use std::{collections::BTreeMap, mem::take};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    mem,
+};
 
-fn insert(mp: &mut BTreeMap<(String, String), Vec<u64>>, k: (String, String), v: u64) {
+fn insert(mp: &mut BTreeMap<(String, String), BTreeSet<u64>>, k: (String, String), v: u64) {
     if let Some(uuid_v) = mp.get_mut(&k) {
-        uuid_v.push(v);
+        uuid_v.insert(v);
     } else {
-        mp.insert(k, vec![v]);
+        let mut set = BTreeSet::new();
+        set.insert(v);
+        mp.insert(k, set);
     }
 }
 
@@ -26,8 +31,8 @@ pub struct Edge {
 pub struct MemTable {
     id: u64,
     edge_mp: BTreeMap<u64, Edge>,
-    inx_source_code: BTreeMap<(String, String), Vec<u64>>,
-    inx_code_target: BTreeMap<(String, String), Vec<u64>>,
+    inx_source_code: BTreeMap<(String, String), BTreeSet<u64>>,
+    inx_code_target: BTreeMap<(String, String), BTreeSet<u64>>,
 }
 
 impl MemTable {
@@ -141,7 +146,7 @@ impl MemTable {
         self.id = 0;
         self.inx_source_code.clear();
         self.inx_code_target.clear();
-        take(&mut self.edge_mp)
+        mem::take(&mut self.edge_mp)
             .into_iter()
             .filter(|(_, edge)| !edge.is_saved)
             .collect()
@@ -176,13 +181,16 @@ impl MemTable {
             .inx_source_code
             .get_mut(&(source.to_string(), code.to_string()))
         {
-            let mut new_uuid_v = Vec::new();
+            let mut new_uuid_v = BTreeSet::new();
             for uuid in &*uuid_v {
                 if self.edge_mp[uuid].is_saved {
                     let edge = self.edge_mp.remove(uuid).unwrap();
-                    self.inx_code_target.remove(&(edge.code, edge.target));
+                    self.inx_code_target
+                        .get_mut(&(edge.code, edge.target))
+                        .unwrap()
+                        .remove(uuid);
                 } else {
-                    new_uuid_v.push(*uuid);
+                    new_uuid_v.insert(*uuid);
                 }
             }
             *uuid_v = new_uuid_v;
@@ -194,13 +202,16 @@ impl MemTable {
             .inx_code_target
             .get_mut(&(code.to_string(), target.to_string()))
         {
-            let mut new_uuid_v = Vec::new();
+            let mut new_uuid_v = BTreeSet::new();
             for uuid in &*uuid_v {
                 if self.edge_mp[&uuid].is_saved {
-                    let edge = self.edge_mp.remove(&uuid).unwrap();
-                    self.inx_source_code.remove(&(edge.source, edge.code));
+                    let edge = self.edge_mp.remove(uuid).unwrap();
+                    self.inx_source_code
+                        .get_mut(&(edge.source, edge.code))
+                        .unwrap()
+                        .remove(uuid);
                 } else {
-                    new_uuid_v.push(*uuid);
+                    new_uuid_v.insert(*uuid);
                 }
             }
             *uuid_v = new_uuid_v;
