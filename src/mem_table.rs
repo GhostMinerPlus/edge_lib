@@ -159,7 +159,7 @@ impl MemTable {
         {
             for uuid in &uuid_v {
                 let edge = self.edge_mp.remove(uuid).unwrap();
-                self.inx_code_target.remove(&(edge.code, edge.target));
+                self.inx_code_target.get_mut(&(edge.code, edge.target)).unwrap().remove(uuid);
             }
         }
     }
@@ -171,7 +171,7 @@ impl MemTable {
         {
             for uuid in &uuid_v {
                 let edge = self.edge_mp.remove(uuid).unwrap();
-                self.inx_source_code.remove(&(edge.source, edge.code));
+                self.inx_source_code.get_mut(&(edge.source, edge.code)).unwrap().remove(uuid);
             }
         }
     }
