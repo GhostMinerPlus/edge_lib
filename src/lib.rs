@@ -517,4 +517,41 @@ mod tests {
             .unwrap()
             .block_on(task);
     }
+
+    #[test]
+    fn test_cache() {
+        let task = async {
+            let dm = DataManager::new();
+
+            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            let script = [
+                "root->name = = edge _"
+            ]
+            .join("\\n");
+             edge_engine
+                .execute(&json::parse(&format!("{{\"{script}\": null}}")).unwrap())
+                .await
+                .unwrap();
+            edge_engine.commit().await.unwrap();
+
+            let script = [
+                "test->name = = edge _",
+                "$->$output = = edge<-name _",
+                "result"
+            ]
+            .join("\\n");
+            let rs = edge_engine
+                .execute(&json::parse(&format!("{{\"{script}\": null}}")).unwrap())
+                .await
+                .unwrap();
+            edge_engine.commit().await.unwrap();
+
+            assert!(rs["result"].len() == 2);
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
 }

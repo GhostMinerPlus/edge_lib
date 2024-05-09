@@ -164,7 +164,7 @@ impl AsDataManager for DataManager {
                     self.cache.insert_temp_edge(source, code, target);
                 }
                 self.cache(format!("{source}->{code}"));
-                Ok(rs)
+                Ok(self.cache.get_target_v_unchecked(source, code))
             }
         };
         Box::pin(future::ready(rs))
@@ -187,7 +187,7 @@ impl AsDataManager for DataManager {
                     self.cache.insert_temp_edge(source, code, target);
                 }
                 self.cache(format!("{target}<-{code}"));
-                Ok(rs)
+                Ok(self.cache.get_source_v_unchecked(code, target))
             }
         };
         Box::pin(future::ready(rs))
