@@ -40,22 +40,6 @@ async fn get_all_by_path(
     Ok(rs)
 }
 
-async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
-    if value == "?" {
-        Ok(uuid::Uuid::new_v4().to_string())
-    } else if value == "$" {
-        Ok(root.to_string())
-    } else if value == "_" {
-        Ok("".to_string())
-    } else if value.starts_with("$<-") {
-        Ok(format!("{root}{}", &value[1..]))
-    } else if value.starts_with("$->") {
-        Ok(format!("{root}{}", &value[1..]))
-    } else {
-        Ok(value.to_string())
-    }
-}
-
 async fn asign(
     dm: &mut Box<dyn AsDataManager>,
     output: &str,
@@ -90,6 +74,22 @@ async fn asign(
         }
     }
     Ok(())
+}
+
+async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
+    if value == "?" {
+        Ok(uuid::Uuid::new_v4().to_string())
+    } else if value == "$" {
+        Ok(root.to_string())
+    } else if value == "_" {
+        Ok("".to_string())
+    } else if value.starts_with("$<-") {
+        Ok(format!("{root}{}", &value[1..]))
+    } else if value.starts_with("$->") {
+        Ok(format!("{root}{}", &value[1..]))
+    } else {
+        Ok(value.to_string())
+    }
 }
 
 async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
