@@ -165,7 +165,7 @@ impl AsDataManager for DataManager {
                 let mut global = self.global.lock().unwrap();
                 let rs = global.get_target_v_unchecked(source, code);
                 drop(global);
-                self.cache.delete_edge_with_source_code(source, code);
+                self.cache.delete_saved_edge_with_source_code(source, code);
                 for target in &rs {
                     self.cache.insert_temp_edge(source, code, target);
                 }
@@ -188,7 +188,7 @@ impl AsDataManager for DataManager {
                 let mut global = self.global.lock().unwrap();
                 let rs = global.get_source_v_unchecked(code, target);
                 drop(global);
-                self.cache.delete_edge_with_code_target(code, target);
+                self.cache.delete_saved_edge_with_code_target(code, target);
                 for source in &rs {
                     self.cache.insert_temp_edge(source, code, target);
                 }
@@ -215,7 +215,7 @@ impl AsDataManager for DataManager {
                     let mut global = self.global.lock().unwrap();
                     let rs = global.get_target_v_unchecked(source, code);
                     drop(global);
-                    self.cache.delete_edge_with_source_code(source, code);
+                    self.cache.delete_saved_edge_with_source_code(source, code);
                     for target in &rs {
                         self.cache.insert_temp_edge(source, code, target);
                     }
@@ -246,7 +246,7 @@ impl AsDataManager for DataManager {
                     let mut global = self.global.lock().unwrap();
                     let rs = global.get_source_v_unchecked(code, target);
                     drop(global);
-                    self.cache.delete_edge_with_code_target(code, target);
+                    self.cache.delete_saved_edge_with_code_target(code, target);
                     for source in &rs {
                         self.cache.insert_temp_edge(source, code, target);
                     }

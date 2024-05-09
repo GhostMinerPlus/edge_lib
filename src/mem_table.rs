@@ -19,7 +19,7 @@ pub struct Edge {
     pub source: String,
     pub code: String,
     pub target: String,
-    is_temp: bool,
+    is_saved: bool,
 }
 
 #[derive(Clone)]
@@ -46,7 +46,7 @@ impl MemTable {
             source: source.to_string(),
             code: code.to_string(),
             target: target.to_string(),
-            is_temp: false,
+            is_saved: false,
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -68,7 +68,7 @@ impl MemTable {
             source: source.to_string(),
             code: code.to_string(),
             target: target.to_string(),
-            is_temp: true,
+            is_saved: true,
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -143,7 +143,7 @@ impl MemTable {
         self.inx_code_target.clear();
         take(&mut self.edge_mp)
             .into_iter()
-            .filter(|(_, edge)| !edge.is_temp)
+            .filter(|(_, edge)| !edge.is_saved)
             .collect()
     }
 
@@ -168,6 +168,42 @@ impl MemTable {
                 let edge = self.edge_mp.remove(uuid).unwrap();
                 self.inx_source_code.remove(&(edge.source, edge.code));
             }
+        }
+    }
+
+    pub fn delete_saved_edge_with_source_code(&mut self, source: &str, code: &str) {
+        if let Some(uuid_v) = self
+            .inx_source_code
+            .get_mut(&(source.to_string(), code.to_string()))
+        {
+            let mut new_uuid_v = Vec::new();
+            for uuid in &*uuid_v {
+                if self.edge_mp[uuid].is_saved {
+                    let edge = self.edge_mp.remove(uuid).unwrap();
+                    self.inx_code_target.remove(&(edge.code, edge.target));
+                } else {
+                    new_uuid_v.push(*uuid);
+                }
+            }
+            *uuid_v = new_uuid_v;
+        }
+    }
+
+    pub fn delete_saved_edge_with_code_target(&mut self, code: &str, target: &str) {
+        if let Some(uuid_v) = self
+            .inx_code_target
+            .get_mut(&(code.to_string(), target.to_string()))
+        {
+            let mut new_uuid_v = Vec::new();
+            for uuid in &*uuid_v {
+                if self.edge_mp[&uuid].is_saved {
+                    let edge = self.edge_mp.remove(&uuid).unwrap();
+                    self.inx_source_code.remove(&(edge.source, edge.code));
+                } else {
+                    new_uuid_v.push(*uuid);
+                }
+            }
+            *uuid_v = new_uuid_v;
         }
     }
 }
