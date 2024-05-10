@@ -388,7 +388,15 @@ pub struct ScriptTree {
 }
 
 pub trait AsEdgeEngine {
+    /// Deprecated
     fn execute(
+        &mut self,
+        _: &json::JsonValue,
+    ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send {
+        async { Err(io::Error::other("deprecated")) }
+    }
+
+    fn execute1(
         &mut self,
         script_tree: &ScriptTree,
     ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
@@ -404,10 +412,35 @@ impl EdgeEngine {
     pub fn new(dm: Box<dyn AsDataManager>) -> Self {
         Self { dm }
     }
+
+    fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
+        let mut next_v = Vec::with_capacity(next_v_json.len());
+        for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
+            next_v.push(Self::entry_2_tree(sub_script_str, sub_next_v_json));
+        }
+        let (script, name) = match script_str.rfind('\n') {
+            Some(pos) => (
+                script_str[0..pos].to_string(),
+                script_str[pos + 1..].to_string(),
+            ),
+            None => (script_str.to_string(), script_str.to_string()),
+        };
+        ScriptTree {
+            script,
+            name,
+            next_v,
+        }
+    }
 }
 
 impl AsEdgeEngine for EdgeEngine {
-    async fn execute(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
+    async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
+        let (script_str, next_v_json) = script_tree.entries().next().unwrap();
+        let script_tree = Self::entry_2_tree(script_str, next_v_json);
+        self.execute1(&script_tree).await
+    }
+
+    async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
         execute(&mut self.dm, "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
@@ -430,7 +463,7 @@ mod tests {
             let dm = DataManager::new();
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
-                .execute(&ScriptTree {
+                .execute1(&ScriptTree {
                     script: [
                         "$->$left = new 100 100",
                         "$->$right = new 100 100",
@@ -464,7 +497,7 @@ mod tests {
             let dm = DataManager::new();
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
-                .execute(&ScriptTree {
+                .execute1(&ScriptTree {
                     script: [
                         "$->$server_exists = inner root->web_server huiwen<-name",
                         "$->$web_server = if $->$server_exists ?",
@@ -491,7 +524,7 @@ mod tests {
             let dm = DataManager::new();
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
-                .execute(&ScriptTree {
+                .execute1(&ScriptTree {
                     script: ["$->$output = + '1 ' 1"].join("\n"),
                     name: "result".to_string(),
                     next_v: vec![],
@@ -514,7 +547,7 @@ mod tests {
 
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             edge_engine
-                .execute(&ScriptTree {
+                .execute1(&ScriptTree {
                     script: ["root->name = = edge _"].join("\n"),
                     name: "".to_string(),
                     next_v: vec![],
@@ -524,7 +557,7 @@ mod tests {
             edge_engine.commit().await.unwrap();
 
             let rs = edge_engine
-                .execute(&ScriptTree {
+                .execute1(&ScriptTree {
                     script: ["test->name = = edge _", "$->$output = = edge<-name _"].join("\n"),
                     name: "result".to_string(),
                     next_v: vec![],
