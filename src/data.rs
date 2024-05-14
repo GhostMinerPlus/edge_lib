@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    future, io, mem,
+    future, io,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -77,8 +77,7 @@ pub trait AsDataManager: Send + Sync {
 pub struct DataManager {
     global: Arc<Mutex<MemTable>>,
     cache: MemTable,
-    delete_list_by_source: HashSet<(String, String)>,
-    delete_list_by_target: HashSet<(String, String)>,
+    cache_set: HashSet<String>,
 }
 
 impl DataManager {
@@ -86,9 +85,22 @@ impl DataManager {
         Self {
             global: Arc::new(Mutex::new(MemTable::new())),
             cache: MemTable::new(),
-            delete_list_by_source: Default::default(),
-            delete_list_by_target: Default::default(),
+            cache_set: HashSet::new(),
         }
+    }
+}
+
+impl DataManager {
+    fn is_cached(&self, path: &str) -> bool {
+        self.cache_set.contains(path)
+    }
+
+    fn cache(&mut self, path: String) {
+        self.cache_set.insert(path);
+    }
+
+    fn clear_cache(&mut self) {
+        self.cache_set.clear();
     }
 }
 
@@ -97,8 +109,7 @@ impl AsDataManager for DataManager {
         Box::new(Self {
             global: self.global.clone(),
             cache: MemTable::new(),
-            delete_list_by_source: HashSet::new(),
-            delete_list_by_target: HashSet::new(),
+            cache_set: HashSet::new(),
         })
     }
 
@@ -107,8 +118,8 @@ impl AsDataManager for DataManager {
         source: &str,
         code: &str,
     ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<String>> + Send>> {
-        let rs = if let Some(target) = self.cache.get_target(source, code) {
-            Ok(target)
+        let rs = if self.is_cached(&format!("{source}->{code}")) {
+            Ok(self.cache.get_target(source, code).unwrap_or_default())
         } else {
             let global = self.global.lock().unwrap();
             match global.get_target(source, code) {
@@ -124,8 +135,8 @@ impl AsDataManager for DataManager {
         code: &str,
         target: &str,
     ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<String>> + Send>> {
-        let rs = if let Some(source) = self.cache.get_source(code, target) {
-            Ok(source)
+        let rs = if self.is_cached(&format!("{target}<-{code}")) {
+            Ok(self.cache.get_source(code, target).unwrap_or_default())
         } else {
             let global = self.global.lock().unwrap();
             match global.get_source(code, target) {
@@ -142,34 +153,19 @@ impl AsDataManager for DataManager {
         code: &str,
     ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Vec<String>>> + Send>> {
         let rs = {
-            let rs = self.cache.get_target_v_unchecked(source, code);
-            if rs.is_empty() {
+            if self.is_cached(&format!("{source}->{code}")) {
+                Ok(self.cache.get_target_v_unchecked(source, code))
+            } else {
                 let mut global = self.global.lock().unwrap();
                 let rs = global.get_target_v_unchecked(source, code);
+                drop(global);
+                self.cache.delete_saved_edge_with_source_code(source, code);
                 for target in &rs {
                     self.cache.insert_temp_edge(source, code, target);
                 }
-                Ok(rs)
-            } else {
-                Ok(rs)
+                self.cache(format!("{source}->{code}"));
+                Ok(self.cache.get_target_v_unchecked(source, code))
             }
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let rs = {
-            let mut global = self.global.lock().unwrap();
-            for (source, code) in mem::take(&mut self.delete_list_by_source) {
-                global.delete_edge_with_source_code(&source, &code);
-            }
-            for (code, target) in mem::take(&mut self.delete_list_by_target) {
-                global.delete_edge_with_code_target(&code, &target);
-            }
-            for (_, edge) in self.cache.take() {
-                global.insert_edge(&edge.source, &edge.code, &edge.target);
-            }
-            Ok(())
         };
         Box::pin(future::ready(rs))
     }
@@ -180,16 +176,18 @@ impl AsDataManager for DataManager {
         target: &str,
     ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Vec<String>>> + Send>> {
         let rs = {
-            let rs = self.cache.get_source_v_unchecked(code, target);
-            if rs.is_empty() {
+            if self.is_cached(&format!("{target}<-{code}")) {
+                Ok(self.cache.get_source_v_unchecked(code, target))
+            } else {
                 let mut global = self.global.lock().unwrap();
                 let rs = global.get_source_v_unchecked(code, target);
+                drop(global);
+                self.cache.delete_saved_edge_with_code_target(code, target);
                 for source in &rs {
                     self.cache.insert_temp_edge(source, code, target);
                 }
-                Ok(rs)
-            } else {
-                Ok(rs)
+                self.cache(format!("{target}<-{code}"));
+                Ok(self.cache.get_source_v_unchecked(code, target))
             }
         };
         Box::pin(future::ready(rs))
@@ -207,9 +205,11 @@ impl AsDataManager for DataManager {
                     self.cache.insert_temp_edge(source, code, target);
                 }
             } else {
-                if let None = self.cache.get_target(source, code) {
+                if !self.is_cached(&format!("{source}->{code}")) {
                     let mut global = self.global.lock().unwrap();
                     let rs = global.get_target_v_unchecked(source, code);
+                    drop(global);
+                    self.cache.delete_saved_edge_with_source_code(source, code);
                     for target in &rs {
                         self.cache.insert_temp_edge(source, code, target);
                     }
@@ -218,6 +218,7 @@ impl AsDataManager for DataManager {
                     self.cache.insert_edge(source, code, target);
                 }
             }
+            self.cache(format!("{source}->{code}"));
             Ok(())
         };
         Box::pin(future::ready(rs))
@@ -235,9 +236,11 @@ impl AsDataManager for DataManager {
                     self.cache.insert_temp_edge(source, code, target);
                 }
             } else {
-                if let None = self.cache.get_source(code, target) {
+                if !self.is_cached(&format!("{target}<-{code}")) {
                     let mut global = self.global.lock().unwrap();
                     let rs = global.get_source_v_unchecked(code, target);
+                    drop(global);
+                    self.cache.delete_saved_edge_with_code_target(code, target);
                     for source in &rs {
                         self.cache.insert_temp_edge(source, code, target);
                     }
@@ -246,6 +249,7 @@ impl AsDataManager for DataManager {
                     self.cache.insert_edge(source, code, target);
                 }
             }
+            self.cache(format!("{target}<-{code}"));
             Ok(())
         };
         Box::pin(future::ready(rs))
@@ -264,12 +268,14 @@ impl AsDataManager for DataManager {
                     self.cache.insert_temp_edge(source, code, target);
                 }
             } else {
-                self.delete_list_by_source
-                    .insert((source.to_string(), code.to_string()));
+                let mut global = self.global.lock().unwrap();
+                global.delete_edge_with_source_code(source, code);
+                drop(global);
                 for target in target_v {
                     self.cache.insert_edge(source, code, target);
                 }
             }
+            self.cache(format!("{source}->{code}"));
             Ok(())
         };
         Box::pin(future::ready(rs))
@@ -288,11 +294,25 @@ impl AsDataManager for DataManager {
                     self.cache.insert_temp_edge(source, code, target);
                 }
             } else {
-                self.delete_list_by_target
-                    .insert((code.to_string(), target.to_string()));
+                let mut global = self.global.lock().unwrap();
+                global.delete_edge_with_code_target(code, target);
+                drop(global);
                 for source in source_v {
                     self.cache.insert_edge(source, code, target);
                 }
+            }
+            self.cache(format!("{target}<-{code}"));
+            Ok(())
+        };
+        Box::pin(future::ready(rs))
+    }
+
+    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        self.clear_cache();
+        let rs = {
+            let mut global = self.global.lock().unwrap();
+            for (_, edge) in self.cache.take() {
+                global.insert_edge(&edge.source, &edge.code, &edge.target);
             }
             Ok(())
         };

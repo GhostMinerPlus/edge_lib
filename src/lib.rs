@@ -1,6 +1,6 @@
 mod inc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::io;
 
 use crate::data::AsDataManager;
@@ -40,22 +40,6 @@ async fn get_all_by_path(
     Ok(rs)
 }
 
-async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
-    if value == "?" {
-        Ok(uuid::Uuid::new_v4().to_string())
-    } else if value == "$" {
-        Ok(root.to_string())
-    } else if value == "_" {
-        Ok("".to_string())
-    } else if value.starts_with("$<-") {
-        Ok(format!("{root}{}", &value[1..]))
-    } else if value.starts_with("$->") {
-        Ok(format!("{root}{}", &value[1..]))
-    } else {
-        Ok(value.to_string())
-    }
-}
-
 async fn asign(
     dm: &mut Box<dyn AsDataManager>,
     output: &str,
@@ -90,6 +74,22 @@ async fn asign(
         }
     }
     Ok(())
+}
+
+async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
+    if value == "?" {
+        Ok(uuid::Uuid::new_v4().to_string())
+    } else if value == "$" {
+        Ok(root.to_string())
+    } else if value == "_" {
+        Ok("".to_string())
+    } else if value.starts_with("$<-") {
+        Ok(format!("{root}{}", &value[1..]))
+    } else if value.starts_with("$->") {
+        Ok(format!("{root}{}", &value[1..]))
+    } else {
+        Ok(value.to_string())
+    }
 }
 
 async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
@@ -228,50 +228,40 @@ fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
 async fn execute(
     dm: &mut Box<dyn AsDataManager>,
     input: &str,
-    script_tree: &json::JsonValue,
+    script_tree: &ScriptTree,
     out_tree: &mut json::JsonValue,
 ) -> io::Result<()> {
-    if script_tree.is_empty() {
+    let root = format!("{}", uuid::Uuid::new_v4().to_string());
+    asign(
+        dm,
+        &format!("{root}->$input"),
+        "+=",
+        vec![input.to_string()],
+    )
+    .await?;
+    let inc_v = parse_script(&script_tree.script)?;
+    let rs = invoke_inc_v(dm, &root, &inc_v).await?;
+    if script_tree.next_v.is_empty() {
+        let _ = out_tree.insert(&script_tree.name, rs);
         return Ok(());
     }
-    if let json::JsonValue::Object(script_tree) = script_tree {
-        for (script, v) in script_tree.iter() {
-            let root = format!("${}", uuid::Uuid::new_v4().to_string());
-            asign(
-                dm,
-                &format!("{root}->$input"),
-                "+=",
-                vec![input.to_string()],
-            )
-            .await?;
-            let (name, inc_v) = parse_script(script)?;
-            let rs = invoke_inc_v(dm, &root, &inc_v).await?;
-            if v.is_empty() {
-                let rs: json::JsonValue = rs.into();
-                let _ = out_tree.insert(&name, rs);
-            } else {
-                // fork
-                let mut cur = json::object! {};
-                for input in &rs {
-                    let mut sub_out_tree = json::object! {};
-                    execute(dm, input, v, &mut sub_out_tree).await?;
-                    merge(&mut cur, &mut sub_out_tree);
-                }
-                let _ = out_tree.insert(&name, cur);
-            }
+    let mut cur = json::object! {};
+    for next_tree in &script_tree.next_v {
+        // fork
+        for input in &rs {
+            let mut sub_out_tree = json::object! {};
+            execute(dm, input, next_tree, &mut sub_out_tree).await?;
+            merge(&mut cur, &mut sub_out_tree);
         }
-        Ok(())
-    } else {
-        Err(io::Error::other(
-            "when execute:\n\tcan not parse [script_tree]",
-        ))
     }
+    let _ = out_tree.insert(&script_tree.name, cur);
+    Ok(())
 }
 
 fn escape_word(word: &str) -> String {
     let mut word = word.replace("\\'", "'");
     if word.starts_with('\'') && word.ends_with('\'') {
-        word = word[1..word.len()-1].to_string();
+        word = word[1..word.len() - 1].to_string();
     }
     word
 }
@@ -301,24 +291,15 @@ fn split_line(line: &str) -> Vec<String> {
     return word_v.iter().map(|word| escape_word(word)).collect();
 }
 
-fn parse_script(script: &str) -> io::Result<(String, Vec<Inc>)> {
+fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
     let mut inc_v = Vec::new();
-    let mut name = None;
     for line in script.lines() {
         if line.is_empty() {
             continue;
         }
-        if name.is_some() {
-            return Err(io::Error::other(
-                "when parse_script:\n\tname already exists",
-            ));
-        }
 
         let word_v = split_line(line);
-        if word_v.len() == 1 {
-            name = Some(word_v[0].to_string());
-            continue;
-        } else if word_v.len() != 5 {
+        if word_v.len() != 5 {
             return Err(io::Error::other(
                 "when parse_script:\n\tmore than 5 words in a line",
             ));
@@ -331,10 +312,7 @@ fn parse_script(script: &str) -> io::Result<(String, Vec<Inc>)> {
             input1: word_v[4].trim().to_string(),
         });
     }
-    match name {
-        Some(name) => Ok((name, inc_v)),
-        None => Ok((script.to_string(), inc_v)),
-    }
+    Ok(inc_v)
 }
 
 #[derive(Clone)]
@@ -402,10 +380,25 @@ struct Inc {
 pub mod data;
 pub mod mem_table;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScriptTree {
+    pub script: String,
+    pub name: String,
+    pub next_v: Vec<ScriptTree>,
+}
+
 pub trait AsEdgeEngine {
+    /// Deprecated
     fn execute(
         &mut self,
-        script_tree: &json::JsonValue,
+        _: &json::JsonValue,
+    ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send {
+        async { Err(io::Error::other("deprecated")) }
+    }
+
+    fn execute1(
+        &mut self,
+        script_tree: &ScriptTree,
     ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
 
     fn commit(&mut self) -> impl std::future::Future<Output = io::Result<()>> + Send;
@@ -419,10 +412,35 @@ impl EdgeEngine {
     pub fn new(dm: Box<dyn AsDataManager>) -> Self {
         Self { dm }
     }
+
+    fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
+        let mut next_v = Vec::with_capacity(next_v_json.len());
+        for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
+            next_v.push(Self::entry_2_tree(sub_script_str, sub_next_v_json));
+        }
+        let (script, name) = match script_str.rfind('\n') {
+            Some(pos) => (
+                script_str[0..pos].to_string(),
+                script_str[pos + 1..].to_string(),
+            ),
+            None => (script_str.to_string(), script_str.to_string()),
+        };
+        ScriptTree {
+            script,
+            name,
+            next_v,
+        }
+    }
 }
 
 impl AsEdgeEngine for EdgeEngine {
     async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
+        let (script_str, next_v_json) = script_tree.entries().next().unwrap();
+        let script_tree = Self::entry_2_tree(script_str, next_v_json);
+        self.execute1(&script_tree).await
+    }
+
+    async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
         execute(&mut self.dm, "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
@@ -435,7 +453,7 @@ impl AsEdgeEngine for EdgeEngine {
 
 #[cfg(test)]
 mod tests {
-    use crate::data::DataManager;
+    use crate::{data::DataManager, ScriptTree};
 
     use super::{AsEdgeEngine, EdgeEngine};
 
@@ -443,23 +461,26 @@ mod tests {
     fn test() {
         let task = async {
             let dm = DataManager::new();
-            let root = [
-                "$->$left = new 100 100",
-                "$->$right = new 100 100",
-                "$->$output = + $->$left $->$right",
-            ]
-            .join("\n");
-            let then = format!("$->$output = rand $->$input _");
-            let then_tree = json::object! {};
-            let mut root_tree = json::object! {};
-            let _ = root_tree.insert(&then, then_tree);
-            let mut script_tree = json::object! {};
-            let _ = script_tree.insert(&root, root_tree);
-
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
-            let rs = edge_engine.execute(&script_tree).await.unwrap();
+            let rs = edge_engine
+                .execute1(&ScriptTree {
+                    script: [
+                        "$->$left = new 100 100",
+                        "$->$right = new 100 100",
+                        "$->$output = + $->$left $->$right",
+                    ]
+                    .join("\n"),
+                    name: "root".to_string(),
+                    next_v: vec![ScriptTree {
+                        script: format!("$->$output = rand $->$input _"),
+                        name: "then".to_string(),
+                        next_v: vec![],
+                    }],
+                })
+                .await
+                .unwrap();
             edge_engine.commit().await.unwrap();
-            let rs = &rs[&root][&then];
+            let rs = &rs["root"]["then"];
             assert_eq!(rs.len(), 100);
             assert_eq!(rs[0].len(), 200);
         };
@@ -475,15 +496,17 @@ mod tests {
         let task = async {
             let dm = DataManager::new();
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
-            let script = [
-                "$->$server_exists = inner root->web_server huiwen<-name",
-                "$->$web_server = if $->$server_exists ?",
-                "$->$output = = $->$web_server _",
-                "info",
-            ]
-            .join("\\n");
             let rs = edge_engine
-                .execute(&json::parse(&format!("{{\"{script}\": null}}")).unwrap())
+                .execute1(&ScriptTree {
+                    script: [
+                        "$->$server_exists = inner root->web_server huiwen<-name",
+                        "$->$web_server = if $->$server_exists ?",
+                        "$->$output = = $->$web_server _",
+                    ]
+                    .join("\n"),
+                    name: "info".to_string(),
+                    next_v: vec![],
+                })
                 .await
                 .unwrap();
             assert!(!rs["info"].is_empty());
@@ -500,16 +523,50 @@ mod tests {
         let task = async {
             let dm = DataManager::new();
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
-            let script = [
-                "$->$output = + '1 ' 1",
-                "result",
-            ]
-            .join("\\n");
             let rs = edge_engine
-                .execute(&json::parse(&format!("{{\"{script}\": null}}")).unwrap())
+                .execute1(&ScriptTree {
+                    script: ["$->$output = + '1 ' 1"].join("\n"),
+                    name: "result".to_string(),
+                    next_v: vec![],
+                })
                 .await
                 .unwrap();
             assert!(rs["result"][0].as_str() == Some("2"));
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
+
+    #[test]
+    fn test_cache() {
+        let task = async {
+            let dm = DataManager::new();
+
+            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            edge_engine
+                .execute1(&ScriptTree {
+                    script: ["root->name = = edge _"].join("\n"),
+                    name: "".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            edge_engine.commit().await.unwrap();
+
+            let rs = edge_engine
+                .execute1(&ScriptTree {
+                    script: ["test->name = = edge _", "$->$output = = edge<-name _"].join("\n"),
+                    name: "result".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            edge_engine.commit().await.unwrap();
+
+            assert!(rs["result"].len() == 2);
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()

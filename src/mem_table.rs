@@ -1,10 +1,15 @@
-use std::{collections::BTreeMap, mem::take};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    mem,
+};
 
-fn insert(mp: &mut BTreeMap<(String, String), Vec<u64>>, k: (String, String), v: u64) {
+fn insert(mp: &mut BTreeMap<(String, String), BTreeSet<u64>>, k: (String, String), v: u64) {
     if let Some(uuid_v) = mp.get_mut(&k) {
-        uuid_v.push(v);
+        uuid_v.insert(v);
     } else {
-        mp.insert(k, vec![v]);
+        let mut set = BTreeSet::new();
+        set.insert(v);
+        mp.insert(k, set);
     }
 }
 
@@ -19,15 +24,15 @@ pub struct Edge {
     pub source: String,
     pub code: String,
     pub target: String,
-    is_temp: bool,
+    is_saved: bool,
 }
 
 #[derive(Clone)]
 pub struct MemTable {
     id: u64,
     edge_mp: BTreeMap<u64, Edge>,
-    inx_source_code: BTreeMap<(String, String), Vec<u64>>,
-    inx_code_target: BTreeMap<(String, String), Vec<u64>>,
+    inx_source_code: BTreeMap<(String, String), BTreeSet<u64>>,
+    inx_code_target: BTreeMap<(String, String), BTreeSet<u64>>,
 }
 
 impl MemTable {
@@ -46,7 +51,7 @@ impl MemTable {
             source: source.to_string(),
             code: code.to_string(),
             target: target.to_string(),
-            is_temp: false,
+            is_saved: false,
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -68,7 +73,7 @@ impl MemTable {
             source: source.to_string(),
             code: code.to_string(),
             target: target.to_string(),
-            is_temp: true,
+            is_saved: true,
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -141,9 +146,9 @@ impl MemTable {
         self.id = 0;
         self.inx_source_code.clear();
         self.inx_code_target.clear();
-        take(&mut self.edge_mp)
+        mem::take(&mut self.edge_mp)
             .into_iter()
-            .filter(|(_, edge)| !edge.is_temp)
+            .filter(|(_, edge)| !edge.is_saved)
             .collect()
     }
 
@@ -154,7 +159,10 @@ impl MemTable {
         {
             for uuid in &uuid_v {
                 let edge = self.edge_mp.remove(uuid).unwrap();
-                self.inx_code_target.remove(&(edge.code, edge.target));
+                self.inx_code_target
+                    .get_mut(&(edge.code, edge.target))
+                    .unwrap()
+                    .remove(uuid);
             }
         }
     }
@@ -166,8 +174,53 @@ impl MemTable {
         {
             for uuid in &uuid_v {
                 let edge = self.edge_mp.remove(uuid).unwrap();
-                self.inx_source_code.remove(&(edge.source, edge.code));
+                self.inx_source_code
+                    .get_mut(&(edge.source, edge.code))
+                    .unwrap()
+                    .remove(uuid);
             }
+        }
+    }
+
+    pub fn delete_saved_edge_with_source_code(&mut self, source: &str, code: &str) {
+        if let Some(uuid_v) = self
+            .inx_source_code
+            .get_mut(&(source.to_string(), code.to_string()))
+        {
+            let mut new_uuid_v = BTreeSet::new();
+            for uuid in &*uuid_v {
+                if self.edge_mp[uuid].is_saved {
+                    let edge = self.edge_mp.remove(uuid).unwrap();
+                    self.inx_code_target
+                        .get_mut(&(edge.code, edge.target))
+                        .unwrap()
+                        .remove(uuid);
+                } else {
+                    new_uuid_v.insert(*uuid);
+                }
+            }
+            *uuid_v = new_uuid_v;
+        }
+    }
+
+    pub fn delete_saved_edge_with_code_target(&mut self, code: &str, target: &str) {
+        if let Some(uuid_v) = self
+            .inx_code_target
+            .get_mut(&(code.to_string(), target.to_string()))
+        {
+            let mut new_uuid_v = BTreeSet::new();
+            for uuid in &*uuid_v {
+                if self.edge_mp[&uuid].is_saved {
+                    let edge = self.edge_mp.remove(uuid).unwrap();
+                    self.inx_source_code
+                        .get_mut(&(edge.source, edge.code))
+                        .unwrap()
+                        .remove(uuid);
+                } else {
+                    new_uuid_v.insert(*uuid);
+                }
+            }
+            *uuid_v = new_uuid_v;
         }
     }
 }
