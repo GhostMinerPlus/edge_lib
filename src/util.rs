@@ -1,0 +1,384 @@
+use std::io;
+
+use crate::{data::AsDataManager, inc, Inc, ScriptTree};
+
+#[async_recursion::async_recursion]
+pub async fn get_all_by_path(
+    dm: &mut Box<dyn AsDataManager>,
+    mut path: Path,
+) -> io::Result<Vec<String>> {
+    if path.step_v.is_empty() {
+        if path.root.is_empty() {
+            return Ok(Vec::new());
+        } else {
+            return Ok(vec![path.root.clone()]);
+        }
+    }
+    let root = path.root.clone();
+    let step = path.step_v.remove(0);
+    let curr_v = if step.arrow == "->" {
+        dm.get_target_v(&root, &step.code).await?
+    } else {
+        dm.get_source_v(&step.code, &root).await?
+    };
+    let mut rs = Vec::new();
+    for root in curr_v {
+        rs.append(
+            &mut get_all_by_path(
+                dm,
+                Path {
+                    root,
+                    step_v: path.step_v.clone(),
+                },
+            )
+            .await?,
+        );
+    }
+    Ok(rs)
+}
+
+pub async fn asign(
+    dm: &mut Box<dyn AsDataManager>,
+    output: &str,
+    operator: &str,
+    item_v: Vec<String>,
+) -> io::Result<()> {
+    let mut output_path = Path::from_str(output);
+    let last_step = match output_path.step_v.pop() {
+        Some(step) => step,
+        None => {
+            let e = io::Error::other("invalid path");
+            log::error!("{e}: {output}");
+            return Err(io::Error::other(e));
+        }
+    };
+    let root_v = get_all_by_path(dm, output_path).await?;
+    if last_step.arrow == "->" {
+        for source in &root_v {
+            if operator == "=" {
+                dm.set_target_v(source, &last_step.code, &item_v).await?;
+            } else {
+                dm.append_target_v(source, &last_step.code, &item_v).await?;
+            }
+        }
+    } else {
+        for target in &root_v {
+            if operator == "=" {
+                dm.set_source_v(&item_v, &last_step.code, target).await?;
+            } else {
+                dm.append_source_v(&item_v, &last_step.code, target).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
+    if value == "?" {
+        Ok(uuid::Uuid::new_v4().to_string())
+    } else if value == "$" {
+        Ok(root.to_string())
+    } else if value == "_" {
+        Ok("".to_string())
+    } else if value.starts_with("$<-") {
+        Ok(format!("{root}{}", &value[1..]))
+    } else if value.starts_with("$->") {
+        Ok(format!("{root}{}", &value[1..]))
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+pub async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
+    let inc_h_v = dm.get_target_v(function, "inc").await?;
+    let mut inc_v = Vec::with_capacity(inc_h_v.len());
+    for inc_h in &inc_h_v {
+        inc_v.push(Inc {
+            output: dm.get_target(inc_h, "output").await?,
+            operator: dm.get_target(inc_h, "operator").await?,
+            function: dm.get_target(inc_h, "function").await?,
+            input: dm.get_target(inc_h, "input").await?,
+            input1: dm.get_target(inc_h, "input1").await?,
+        });
+    }
+    Ok(inc_v)
+}
+
+#[async_recursion::async_recursion]
+pub async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<()> {
+    log::debug!("invoke_inc: {:?}", inc);
+    let input_item_v = get_all_by_path(dm, Path::from_str(&inc.input)).await?;
+    let input1_item_v = get_all_by_path(dm, Path::from_str(&inc.input1)).await?;
+    let rs = match inc.function.as_str() {
+        //
+        "new" => inc::new(dm, input_item_v, input1_item_v).await?,
+        "line" => inc::line(dm, input_item_v, input1_item_v).await?,
+        "rand" => inc::rand(dm, input_item_v, input1_item_v).await?,
+        //
+        "append" => inc::append(dm, input_item_v, input1_item_v).await?,
+        "distinct" => inc::distinct(dm, input_item_v, input1_item_v).await?,
+        "left" => inc::left(dm, input_item_v, input1_item_v).await?,
+        "inner" => inc::inner(dm, input_item_v, input1_item_v).await?,
+        "if" => inc::if_(dm, input_item_v, input1_item_v).await?,
+        //
+        "+" => inc::add(dm, input_item_v, input1_item_v).await?,
+        "-" => inc::minus(dm, input_item_v, input1_item_v).await?,
+        "*" => inc::mul(dm, input_item_v, input1_item_v).await?,
+        "/" => inc::div(dm, input_item_v, input1_item_v).await?,
+        "%" => inc::rest(dm, input_item_v, input1_item_v).await?,
+        //
+        "==" => inc::equal(dm, input_item_v, input1_item_v).await?,
+        "!=" => inc::not_equal(dm, input_item_v, input1_item_v).await?,
+        ">" => inc::greater(dm, input_item_v, input1_item_v).await?,
+        "<" => inc::smaller(dm, input_item_v, input1_item_v).await?,
+        //
+        "sort" => inc::sort(dm, input_item_v, input1_item_v).await?,
+        //
+        "count" => inc::count(dm, input_item_v, input1_item_v).await?,
+        "sum" => inc::sum(dm, input_item_v, input1_item_v).await?,
+        //
+        "=" => inc::set(dm, input_item_v, input1_item_v).await?,
+        _ => {
+            let inc_v = dump_inc_v(dm, &inc.function).await?;
+            let new_root = format!("${}", uuid::Uuid::new_v4().to_string());
+            asign(dm, &format!("{new_root}->$input"), "=", input_item_v).await?;
+            asign(dm, &format!("{new_root}->$input1"), "=", input1_item_v).await?;
+            log::debug!("inc_v.len(): {}", inc_v.len());
+            for inc in &inc_v {
+                let inc = unwrap_inc(dm, &new_root, inc).await?;
+                invoke_inc(dm, root, &inc).await?;
+            }
+            get_all_by_path(dm, Path::from_str(&format!("{new_root}->$output"))).await?
+        }
+    };
+    asign(dm, &inc.output, &inc.operator, rs).await
+}
+
+pub async fn get_one(dm: &mut Box<dyn AsDataManager>, root: &str, id: &str) -> io::Result<String> {
+    let path = unwrap_value(root, id).await?;
+    let id_v = get_all_by_path(dm, Path::from_str(&path)).await?;
+    if id_v.len() != 1 {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "need 1 but not"));
+    }
+    Ok(id_v[0].clone())
+}
+
+pub async fn unwrap_inc(dm: &mut Box<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<Inc> {
+    let inc = Inc {
+        output: unwrap_value(root, &inc.output).await?,
+        operator: get_one(dm, root, &inc.operator).await?,
+        function: get_one(dm, root, &inc.function).await?,
+        input: unwrap_value(root, &inc.input).await?,
+        input1: unwrap_value(root, &inc.input1).await?,
+    };
+    Ok(inc)
+}
+
+pub fn find_arrrow(path: &str) -> usize {
+    let p = path.find("->");
+    let q = path.find("<-");
+    if p.is_none() && q.is_none() {
+        path.len()
+    } else {
+        if p.is_some() && q.is_some() {
+            let p = p.unwrap();
+            let q = q.unwrap();
+            std::cmp::min(p, q)
+        } else if p.is_some() {
+            p.unwrap()
+        } else {
+            q.unwrap()
+        }
+    }
+}
+
+pub async fn invoke_inc_v(
+    dm: &mut Box<dyn AsDataManager>,
+    root: &str,
+    inc_v: &Vec<Inc>,
+) -> io::Result<Vec<String>> {
+    log::debug!("inc_v.len(): {}", inc_v.len());
+    for inc in inc_v {
+        let inc = unwrap_inc(dm, &root, inc).await?;
+        invoke_inc(dm, root, &inc).await?;
+    }
+    get_all_by_path(dm, Path::from_str(&format!("{root}->$output"))).await
+}
+
+pub fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
+    for (k, v) in s_tree.entries_mut() {
+        if v.is_array() {
+            if !p_tree.has_key(k) {
+                let _ = p_tree.insert(k, json::array![]);
+            }
+            let _ = p_tree[k].push(v.clone());
+        } else {
+            if !p_tree.has_key(k) {
+                let _ = p_tree.insert(k, json::object! {});
+            }
+            merge(&mut p_tree[k], v);
+        }
+    }
+}
+
+#[async_recursion::async_recursion]
+pub async fn execute(
+    dm: &mut Box<dyn AsDataManager>,
+    input: &str,
+    script_tree: &ScriptTree,
+    out_tree: &mut json::JsonValue,
+) -> io::Result<()> {
+    let root = format!("{}", uuid::Uuid::new_v4().to_string());
+    asign(
+        dm,
+        &format!("{root}->$input"),
+        "+=",
+        vec![input.to_string()],
+    )
+    .await?;
+    let inc_v = parse_script(&script_tree.script)?;
+    let rs = invoke_inc_v(dm, &root, &inc_v).await?;
+    if script_tree.next_v.is_empty() {
+        let _ = out_tree.insert(&script_tree.name, rs);
+        return Ok(());
+    }
+    let mut cur = json::object! {};
+    for next_tree in &script_tree.next_v {
+        // fork
+        for input in &rs {
+            let mut sub_out_tree = json::object! {};
+            execute(dm, input, next_tree, &mut sub_out_tree).await?;
+            merge(&mut cur, &mut sub_out_tree);
+        }
+    }
+    let _ = out_tree.insert(&script_tree.name, cur);
+    Ok(())
+}
+
+pub fn escape_word(word: &str) -> String {
+    let mut word = word.replace("\\'", "'");
+    if word.starts_with('\'') && word.ends_with('\'') {
+        word = word[1..word.len() - 1].to_string();
+    }
+    word
+}
+
+pub fn split_line(line: &str) -> Vec<String> {
+    let part_v: Vec<&str> = line.split(' ').collect();
+    if part_v.len() <= 5 {
+        return part_v.into_iter().map(escape_word).collect();
+    }
+
+    let mut word_v = Vec::with_capacity(5);
+    let mut entered = false;
+    for part in part_v {
+        if entered {
+            *word_v.last_mut().unwrap() = format!("{} {part}", word_v.last().unwrap());
+            if part.ends_with('\'') && !part.ends_with("\\'") {
+                entered = false;
+            }
+        } else {
+            word_v.push(part.to_string());
+            if part.starts_with('\'') {
+                entered = true;
+            }
+        }
+    }
+
+    return word_v.iter().map(|word| escape_word(word)).collect();
+}
+
+pub fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
+    let mut inc_v = Vec::new();
+    for line in script.lines() {
+        if line.is_empty() {
+            continue;
+        }
+
+        let word_v = split_line(line);
+        if word_v.len() != 5 {
+            return Err(io::Error::other(
+                "when parse_script:\n\tmore than 5 words in a line",
+            ));
+        }
+        inc_v.push(Inc {
+            output: word_v[0].trim().to_string(),
+            operator: word_v[1].trim().to_string(),
+            function: word_v[2].trim().to_string(),
+            input: word_v[3].trim().to_string(),
+            input1: word_v[4].trim().to_string(),
+        });
+    }
+    Ok(inc_v)
+}
+
+#[derive(Clone)]
+pub struct Step {
+    arrow: String,
+    code: String,
+}
+
+pub struct Path {
+    root: String,
+    step_v: Vec<Step>,
+}
+
+impl Path {
+    pub fn from_str(path: &str) -> Self {
+        if path.is_empty() {
+            return Path {
+                root: String::new(),
+                step_v: Vec::new(),
+            };
+        }
+        log::debug!("Path::from_str: {path}");
+        if path.starts_with('"') {
+            return Self {
+                root: path[1..path.len() - 1].to_string(),
+                step_v: Vec::new(),
+            };
+        }
+        let mut s = find_arrrow(path);
+
+        let root = path[0..s].to_string();
+        if s == path.len() {
+            return Self {
+                root,
+                step_v: Vec::new(),
+            };
+        }
+        let mut tail = &path[s..];
+        let mut step_v = Vec::new();
+        loop {
+            s = find_arrrow(&tail[2..]) + 2;
+            step_v.push(Step {
+                arrow: tail[0..2].to_string(),
+                code: tail[2..s].to_string(),
+            });
+            if s == tail.len() {
+                break;
+            }
+            tail = &tail[s..];
+        }
+        Self { root, step_v }
+    }
+}
+
+pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
+    let mut next_v = Vec::with_capacity(next_v_json.len());
+    for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
+        next_v.push(entry_2_tree(sub_script_str, sub_next_v_json));
+    }
+    let (script, name) = match script_str.rfind('\n') {
+        Some(pos) => (
+            script_str[0..pos].to_string(),
+            script_str[pos + 1..].to_string(),
+        ),
+        None => (script_str.to_string(), script_str.to_string()),
+    };
+    ScriptTree {
+        script,
+        name,
+        next_v,
+    }
+}
