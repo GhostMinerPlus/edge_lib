@@ -461,13 +461,7 @@ impl IncValue {
     }
 
     pub fn from_str(s: &str) -> Self {
-        if s.starts_with('\'') && s.ends_with('\'') {
-            return Self::Value(s.to_string());
-        }
-        if s.contains("->") || s.contains("<-") {
-            return Self::Addr(s.to_string());
-        }
-        return Self::Value(s.to_string());
+        Self::from_string(s.to_string())
     }
 
     pub fn from_string(s: String) -> Self {
@@ -640,13 +634,13 @@ mod tests {
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
-                    script: ["$->$output = + '1 ' 1"].join("\n"),
+                    script: ["$->$output = = '1 ' _"].join("\n"),
                     name: "result".to_string(),
                     next_v: vec![],
                 })
                 .await
                 .unwrap();
-            assert!(rs["result"][0].as_str() == Some("2"));
+            assert!(rs["result"][0].as_str() == Some("'1 '"));
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
