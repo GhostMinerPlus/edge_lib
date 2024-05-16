@@ -40,6 +40,10 @@ async fn get_all_by_path(
     Ok(rs)
 }
 
+fn gen_root() -> String {
+    format!("${}", uuid::Uuid::new_v4().to_string())
+}
+
 #[async_recursion::async_recursion]
 async fn on_asigned(dm: &mut Box<dyn AsDataManager>, code: &str) -> io::Result<()> {
     let listener_v = dm.get_target_v(code, "listener").await?;
@@ -56,7 +60,7 @@ async fn on_asigned(dm: &mut Box<dyn AsDataManager>, code: &str) -> io::Result<(
                 inc
             })
             .collect::<Vec<Inc>>();
-        let new_root = format!("{}", uuid::Uuid::new_v4().to_string());
+        let new_root = gen_root();
         asign(
             dm,
             &format!("{new_root}->$input"),
@@ -91,7 +95,7 @@ async fn asign(
     if last_step.arrow == "<-" {
         return Err(io::Error::other("not allow to asign parents by '<-'"));
     }
-    let root_v = get_all_by_path(dm, output_path).await?;
+    let root_v = get_all_by_path(dm, output_path.clone()).await?;
 
     if operator == "=" {
         for source in &root_v {
@@ -102,7 +106,9 @@ async fn asign(
             dm.append_target_v(source, &last_step.code, &item_v).await?;
         }
     }
-
+    if output_path.root.starts_with('$') || data::is_temp(&last_step.code) {
+        return Ok(());
+    }
     on_asigned(dm, &last_step.code).await
 }
 
@@ -189,7 +195,7 @@ async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()
         "=" => inc::set(dm, input_item_v, input1_item_v).await?,
         _ => {
             let inc_v = dump_inc_v(dm, inc.function.as_str()).await?;
-            let new_root = format!("{}", uuid::Uuid::new_v4().to_string());
+            let new_root = gen_root();
             asign(dm, &format!("{new_root}->$input"), "=", input_item_v).await?;
             asign(dm, &format!("{new_root}->$input1"), "=", input1_item_v).await?;
             log::debug!("inc_v.len(): {}", inc_v.len());
@@ -304,7 +310,7 @@ async fn execute(
     script_tree: &ScriptTree,
     out_tree: &mut json::JsonValue,
 ) -> io::Result<()> {
-    let root = format!("{}", uuid::Uuid::new_v4().to_string());
+    let root = gen_root();
     asign(
         dm,
         &format!("{root}->$input"),
@@ -386,6 +392,7 @@ struct Step {
     code: String,
 }
 
+#[derive(Clone)]
 struct Path {
     root: String,
     step_v: Vec<Step>,

@@ -7,7 +7,7 @@ use std::{
 
 use crate::mem_table::MemTable;
 
-fn is_temp(code: &str) -> bool {
+pub fn is_temp(code: &str) -> bool {
     code.starts_with('$')
 }
 
@@ -70,6 +70,20 @@ pub trait AsDataManager: Send + Sync {
         code: &str,
         target: &str,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
+
+    /// Get all targets from `source->code`
+    fn load_target_v(
+        &mut self,
+        source: &str,
+        code: &str,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
+
+    /// Get all targets from `source->code`
+    fn load_source_v(
+        &mut self,
+        code: &str,
+        target: &str,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 
     fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 }
@@ -189,6 +203,48 @@ impl AsDataManager for DataManager {
                 self.cache(format!("{target}<-{code}"));
                 Ok(self.cache.get_source_v_unchecked(code, target))
             }
+        };
+        Box::pin(future::ready(rs))
+    }
+
+    fn load_target_v(
+        &mut self,
+        source: &str,
+        code: &str,
+    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>> {
+        let rs = {
+            if !self.is_cached(&format!("{source}->{code}")) {
+                let mut global = self.global.lock().unwrap();
+                let rs = global.get_target_v_unchecked(source, code);
+                drop(global);
+                self.cache.delete_saved_edge_with_source_code(source, code);
+                for target in &rs {
+                    self.cache.insert_temp_edge(source, code, target);
+                }
+                self.cache(format!("{source}->{code}"));
+            }
+            Ok(())
+        };
+        Box::pin(future::ready(rs))
+    }
+
+    fn load_source_v(
+        &mut self,
+        code: &str,
+        target: &str,
+    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>> {
+        let rs = {
+            if !self.is_cached(&format!("{target}<-{code}")) {
+                let mut global = self.global.lock().unwrap();
+                let rs = global.get_source_v_unchecked(code, target);
+                drop(global);
+                self.cache.delete_saved_edge_with_code_target(code, target);
+                for source in &rs {
+                    self.cache.insert_temp_edge(source, code, target);
+                }
+                self.cache(format!("{target}<-{code}"));
+            }
+            Ok(())
         };
         Box::pin(future::ready(rs))
     }
