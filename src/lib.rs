@@ -46,7 +46,7 @@ pub trait AsEdgeEngine {
     fn decompose(
         &mut self,
         target_script: &str,
-    ) -> impl std::future::Future<Output = err::Result<()>> + Send {
+    ) -> impl std::future::Future<Output = err::Result<ScriptTree>> + Send {
         async { todo!() }
     }
 }
@@ -64,7 +64,7 @@ impl EdgeEngine {
         path.contains("->") || path.contains("<-")
     }
 
-    async fn decompose_inc(&mut self, target_inc: &Inc) -> err::Result<()> {
+    async fn decompose_inc(&mut self, target_inc: &Inc) -> err::Result<ScriptTree> {
         let flag_v = [
             Self::is_mutable(&target_inc.input),
             Self::is_mutable(&target_inc.input1),
@@ -93,7 +93,7 @@ impl AsEdgeEngine for EdgeEngine {
         self.dm.commit().await
     }
 
-    async fn decompose(&mut self, target_script: &str) -> err::Result<()> {
+    async fn decompose(&mut self, target_script: &str) -> err::Result<ScriptTree> {
         let target_inc_v = util::parse_script(target_script).map_err(err::map_io_err)?;
         if target_inc_v.len() == 1 {
             return self.decompose_inc(&target_inc_v[0]).await;
