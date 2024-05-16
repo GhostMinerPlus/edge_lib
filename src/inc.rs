@@ -337,7 +337,7 @@ pub async fn count(
 ) -> io::Result<Vec<String>> {
     let mut output_item_v = Vec::new();
     output_item_v.push(input_item_v.len().to_string());
-    Ok(input_item_v)
+    Ok(output_item_v)
 }
 
 pub async fn sum(
