@@ -1,44 +1,9 @@
 mod inc;
 
 use serde::{Deserialize, Serialize};
-use std::io;
+use std::{fmt::Display, io};
 
 use crate::data::AsDataManager;
-
-#[async_recursion::async_recursion]
-async fn get_all_by_path(
-    dm: &mut Box<dyn AsDataManager>,
-    mut path: Path,
-) -> io::Result<Vec<String>> {
-    if path.step_v.is_empty() {
-        if path.root.is_empty() {
-            return Ok(Vec::new());
-        } else {
-            return Ok(vec![path.root.clone()]);
-        }
-    }
-    let root = path.root.clone();
-    let step = path.step_v.remove(0);
-    let curr_v = if step.arrow == "->" {
-        dm.get_target_v(&root, &step.code).await?
-    } else {
-        dm.get_source_v(&step.code, &root).await?
-    };
-    let mut rs = Vec::new();
-    for root in curr_v {
-        rs.append(
-            &mut get_all_by_path(
-                dm,
-                Path {
-                    root,
-                    step_v: path.step_v.clone(),
-                },
-            )
-            .await?,
-        );
-    }
-    Ok(rs)
-}
 
 fn gen_root() -> String {
     format!("${}", uuid::Uuid::new_v4().to_string())
@@ -46,12 +11,17 @@ fn gen_root() -> String {
 
 #[async_recursion::async_recursion]
 async fn on_asigned(dm: &mut Box<dyn AsDataManager>, code: &str) -> io::Result<()> {
-    let listener_v = dm.get_target_v(code, "listener").await?;
+    let listener_v = dm
+        .get(&Path::from_str(&format!("{code}->listener")))
+        .await?;
     for listener in &listener_v {
-        let target = escape_word(&dm.get_target(listener, "target").await?);
-        if target.is_empty() {
+        let target_v = dm
+            .get(&Path::from_str(&format!("{listener}->target")))
+            .await?;
+        if target_v.is_empty() {
             continue;
         }
+        let target = escape_word(&target_v[0]);
         let inc_v = dump_inc_v(dm, listener)
             .await?
             .into_iter()
@@ -61,10 +31,8 @@ async fn on_asigned(dm: &mut Box<dyn AsDataManager>, code: &str) -> io::Result<(
             })
             .collect::<Vec<Inc>>();
         let new_root = gen_root();
-        asign(
-            dm,
-            &format!("{new_root}->$input"),
-            "=",
+        dm.set(
+            &Path::from_str(&format!("{new_root}->$input")),
             vec![code.to_string()],
         )
         .await?;
@@ -77,45 +45,8 @@ async fn on_asigned(dm: &mut Box<dyn AsDataManager>, code: &str) -> io::Result<(
     Ok(())
 }
 
-async fn asign(
-    dm: &mut Box<dyn AsDataManager>,
-    output: &str,
-    operator: &str,
-    item_v: Vec<String>,
-) -> io::Result<()> {
-    let mut output_path = Path::from_str(output);
-    let last_step = match output_path.step_v.pop() {
-        Some(step) => step,
-        None => {
-            let e = io::Error::other("invalid path");
-            log::error!("{e}: {output}");
-            return Err(io::Error::other(e));
-        }
-    };
-    if last_step.arrow == "<-" {
-        return Err(io::Error::other("not allow to asign parents by '<-'"));
-    }
-    let root_v = get_all_by_path(dm, output_path.clone()).await?;
-
-    if operator == "=" {
-        for source in &root_v {
-            dm.set_target_v(source, &last_step.code, &item_v).await?;
-        }
-    } else {
-        for source in &root_v {
-            dm.append_target_v(source, &last_step.code, &item_v).await?;
-        }
-    }
-    if output_path.root.starts_with('$') || data::is_temp(&last_step.code) {
-        return Ok(());
-    }
-    on_asigned(dm, &last_step.code).await
-}
-
 async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
-    if value.starts_with('\'') {
-        Ok(value.to_string())
-    } else if value.starts_with("$<-") {
+    if value.starts_with("$<-") {
         Ok(format!("{root}{}", &value[1..]))
     } else if value.starts_with("$->") {
         Ok(format!("{root}{}", &value[1..]))
@@ -139,13 +70,21 @@ fn escape_word(word: &str) -> String {
 }
 
 async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
-    let output_v = get_all_by_path(dm, Path::from_str(&format!("{function}->inc->output"))).await?;
-    let operator_v =
-        get_all_by_path(dm, Path::from_str(&format!("{function}->inc->operator"))).await?;
-    let function_v =
-        get_all_by_path(dm, Path::from_str(&format!("{function}->inc->function"))).await?;
-    let input_v = get_all_by_path(dm, Path::from_str(&format!("{function}->inc->input"))).await?;
-    let input1_v = get_all_by_path(dm, Path::from_str(&format!("{function}->inc->input1"))).await?;
+    let output_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->output")))
+        .await?;
+    let operator_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->operator")))
+        .await?;
+    let function_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->function")))
+        .await?;
+    let input_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->input")))
+        .await?;
+    let input1_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->input1")))
+        .await?;
     let mut inc_v = Vec::with_capacity(output_v.len());
     for i in 0..output_v.len() {
         inc_v.push(Inc {
@@ -162,8 +101,12 @@ async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Resu
 #[async_recursion::async_recursion]
 async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
     log::debug!("invoke_inc: {:?}", inc);
-    let input_item_v = get_all_by_path(dm, Path::from_str(inc.input.as_str())).await?;
-    let input1_item_v = get_all_by_path(dm, Path::from_str(inc.input1.as_str())).await?;
+    let path = Path::from_str(inc.output.as_str());
+    if path.step_v.is_empty() {
+        return Ok(());
+    }
+    let input_item_v = dm.get(&Path::from_str(inc.input.as_str())).await?;
+    let input1_item_v = dm.get(&Path::from_str(inc.input1.as_str())).await?;
     let rs = match inc.function.as_str() {
         //
         "new" => inc::new(dm, input_item_v, input1_item_v).await?,
@@ -187,7 +130,7 @@ async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()
         ">" => inc::greater(dm, input_item_v, input1_item_v).await?,
         "<" => inc::smaller(dm, input_item_v, input1_item_v).await?,
         //
-        "sort" => inc::sort(dm, input_item_v, input1_item_v).await?,
+        // "sort" => inc::sort(dm, input_item_v, input1_item_v).await?,
         //
         "count" => inc::count(dm, input_item_v, input1_item_v).await?,
         "sum" => inc::sum(dm, input_item_v, input1_item_v).await?,
@@ -196,22 +139,36 @@ async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()
         _ => {
             let inc_v = dump_inc_v(dm, inc.function.as_str()).await?;
             let new_root = gen_root();
-            asign(dm, &format!("{new_root}->$input"), "=", input_item_v).await?;
-            asign(dm, &format!("{new_root}->$input1"), "=", input1_item_v).await?;
+            dm.set(
+                &Path::from_str(&format!("{new_root}->$input")),
+                input_item_v,
+            )
+            .await?;
+            dm.set(
+                &Path::from_str(&format!("{new_root}->$input1")),
+                input1_item_v,
+            )
+            .await?;
             log::debug!("inc_v.len(): {}", inc_v.len());
             for inc in &inc_v {
                 let inc = unwrap_inc(dm, &new_root, inc).await?;
                 invoke_inc(dm, &inc).await?;
             }
-            get_all_by_path(dm, Path::from_str(&format!("{new_root}->$output"))).await?
+            dm.get(&Path::from_str(&format!("{new_root}->$output")))
+                .await?
         }
     };
-    asign(dm, inc.output.as_str(), inc.operator.as_str(), rs).await
+    if inc.operator.as_str() == "=" {
+        dm.set(&path, rs).await?;
+    } else {
+        dm.append(&path, rs).await?;
+    }
+    on_asigned(dm, &path.step_v.last().unwrap().code).await
 }
 
 async fn get_one(dm: &mut Box<dyn AsDataManager>, root: &str, id: &str) -> io::Result<String> {
     let path = unwrap_value(root, id).await?;
-    let id_v = get_all_by_path(dm, Path::from_str(&path)).await?;
+    let id_v = dm.get(&Path::from_str(&path)).await?;
     if id_v.len() != 1 {
         return Err(io::Error::new(io::ErrorKind::NotFound, "need 1 but not"));
     }
@@ -284,7 +241,7 @@ async fn invoke_inc_v(
         let inc = unwrap_inc(dm, &root, inc).await?;
         invoke_inc(dm, &inc).await?;
     }
-    get_all_by_path(dm, Path::from_str(&format!("{root}->$output"))).await
+    dm.get(&Path::from_str(&format!("{root}->$output"))).await
 }
 
 fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
@@ -311,10 +268,8 @@ async fn execute(
     out_tree: &mut json::JsonValue,
 ) -> io::Result<()> {
     let root = gen_root();
-    asign(
-        dm,
-        &format!("{root}->$input"),
-        "+=",
+    dm.append(
+        &Path::from_str(&format!("{root}->$input")),
         vec![input.to_string()],
     )
     .await?;
@@ -386,20 +341,20 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
     Ok(inc_v)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 struct Step {
     arrow: String,
     code: String,
 }
 
-#[derive(Clone)]
-struct Path {
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct Path {
     root: String,
     step_v: Vec<Step>,
 }
 
 impl Path {
-    fn from_str(path: &str) -> Self {
+    pub fn from_str(path: &str) -> Self {
         if path.is_empty() {
             return Path {
                 root: String::new(),
@@ -437,6 +392,20 @@ impl Path {
         }
         Self { root, step_v }
     }
+
+    pub fn to_string(&self) -> String {
+        let mut s = self.root.clone();
+        for step in &self.step_v {
+            s = format!("{s}{}{}", step.arrow, step.code);
+        }
+        s
+    }
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -472,7 +441,7 @@ impl IncValue {
     }
 
     pub fn from_string(s: String) -> Self {
-        if s.starts_with('\'') && s.ends_with('\'') {
+        if s.starts_with('\'') && s.ends_with('\'') && !s.ends_with("\\'") {
             return Self::Value(s);
         }
         if s.contains("->") || s.contains("<-") {
@@ -569,14 +538,17 @@ impl AsEdgeEngine for EdgeEngine {
 
 #[cfg(test)]
 mod tests {
-    use crate::{data::DataManager, ScriptTree};
+    use crate::{
+        data::{MemDataManager, RecDataManager},
+        ScriptTree,
+    };
 
     use super::{AsEdgeEngine, EdgeEngine};
 
     #[test]
     fn test() {
         let task = async {
-            let dm = DataManager::new();
+            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
@@ -610,7 +582,7 @@ mod tests {
     #[test]
     fn test_if() {
         let task = async {
-            let dm = DataManager::new();
+            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
@@ -637,7 +609,7 @@ mod tests {
     #[test]
     fn test_space() {
         let task = async {
-            let dm = DataManager::new();
+            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
@@ -659,7 +631,7 @@ mod tests {
     #[test]
     fn test_cache() {
         let task = async {
-            let dm = DataManager::new();
+            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
 
             let mut edge_engine = EdgeEngine::new(Box::new(dm));
             edge_engine

@@ -74,20 +74,20 @@ pub async fn set(
     Ok(input_item_v)
 }
 
-pub async fn sort(
-    dm: &mut Box<dyn AsDataManager>,
-    input_item_v: Vec<String>,
-    _: Vec<String>,
-) -> io::Result<Vec<String>> {
-    let mut temp_item_v = Vec::with_capacity(input_item_v.len());
-    for input_item in &input_item_v {
-        let no = dm.get_target(input_item, "$no").await?;
-        temp_item_v.push((input_item.clone(), no));
-    }
-    temp_item_v.sort_by(|p, q| p.1.cmp(&q.1));
-    let output_item_v = temp_item_v.into_iter().map(|item| item.0).collect();
-    Ok(output_item_v)
-}
+// pub async fn sort(
+//     dm: &mut Box<dyn AsDataManager>,
+//     input_item_v: Vec<String>,
+//     _: Vec<String>,
+// ) -> io::Result<Vec<String>> {
+//     let mut temp_item_v = Vec::with_capacity(input_item_v.len());
+//     for input_item in &input_item_v {
+//         let no = dm.get_target(input_item, "$no").await?;
+//         temp_item_v.push((input_item.clone(), no));
+//     }
+//     temp_item_v.sort_by(|p, q| p.1.cmp(&q.1));
+//     let output_item_v = temp_item_v.into_iter().map(|item| item.0).collect();
+//     Ok(output_item_v)
+// }
 
 pub async fn add(
     _: &mut Box<dyn AsDataManager>,

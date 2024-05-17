@@ -1,9 +1,9 @@
-use edge_lib::{data::{AsDataManager, DataManager}, AsEdgeEngine, EdgeEngine, ScriptTree};
+use edge_lib::{data::{AsDataManager, MemDataManager, RecDataManager}, AsEdgeEngine, EdgeEngine, Path, ScriptTree};
 
 #[test]
-fn test_cache() {
+fn test_listener() {
     let task = async {
-        let mut dm = DataManager::new();
+        let mut dm = RecDataManager::new(Box::new(MemDataManager::new()));
 
         let mut edge_engine = EdgeEngine::new(dm.divide());
         edge_engine
@@ -26,8 +26,8 @@ fn test_cache() {
             .unwrap();
         edge_engine.commit().await.unwrap();
 
-        let listener_v = dm.get_target_v("name", "listener").await.unwrap();
-        let target_v = dm.get_target_v(&listener_v[0], "target").await.unwrap();
+        let listener_v = dm.get(&Path::from_str("name->listener")).await.unwrap();
+        let target_v = dm.get(&Path::from_str(&format!("{}->target", listener_v[0]))).await.unwrap();
         assert_eq!(target_v[0], "'root->name_cnt'");
 
         let rs = edge_engine

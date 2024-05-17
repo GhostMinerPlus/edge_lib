@@ -1,377 +1,346 @@
-use std::{
-    collections::HashSet,
-    future, io,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, future, io, mem, pin::Pin, sync::Arc};
 
-use crate::mem_table::MemTable;
+use tokio::sync::Mutex;
+
+use crate::{mem_table, Path};
 
 pub fn is_temp(code: &str) -> bool {
     code.starts_with('$')
 }
 
 // Public
-pub trait AsDataManager: Send + Sync {
+pub trait AsDataManager: Send {
     fn divide(&self) -> Box<dyn AsDataManager>;
 
-    fn append_target_v(
+    /// Get all targets from `source->code`
+    fn append(
         &mut self,
-        source: &str,
-        code: &str,
-        target_v: &Vec<String>,
+        path: &Path,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    fn append_source_v(
-        &mut self,
-        source_v: &Vec<String>,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    fn set_target_v(
-        &mut self,
-        source: &str,
-        code: &str,
-        target_v: &Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    fn set_source_v(
-        &mut self,
-        source_v: &Vec<String>,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    /// Get a target from `source->code`
-    fn get_target(
-        &mut self,
-        source: &str,
-        code: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<String>> + Send>>;
-
-    /// Get a source from `target<-code`
-    fn get_source(
-        &mut self,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<String>> + Send>>;
 
     /// Get all targets from `source->code`
-    fn get_target_v(
+    fn set(
         &mut self,
-        source: &str,
-        code: &str,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
+
+    /// Get all targets from `source->code`
+    fn get(
+        &mut self,
+        path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
-
-    /// Get all targets from `source->code`
-    fn get_source_v(
-        &mut self,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
-
-    /// Get all targets from `source->code`
-    fn load_target_v(
-        &mut self,
-        source: &str,
-        code: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    /// Get all targets from `source->code`
-    fn load_source_v(
-        &mut self,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 
     fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 }
 
-pub struct DataManager {
-    global: Arc<Mutex<MemTable>>,
-    cache: MemTable,
-    cache_set: HashSet<String>,
+#[derive(Clone)]
+pub struct MemDataManager {
+    mem_table: Arc<Mutex<mem_table::MemTable>>,
 }
 
-impl DataManager {
+impl MemDataManager {
     pub fn new() -> Self {
         Self {
-            global: Arc::new(Mutex::new(MemTable::new())),
-            cache: MemTable::new(),
-            cache_set: HashSet::new(),
+            mem_table: Arc::new(Mutex::new(mem_table::MemTable::new())),
         }
     }
 }
 
-impl DataManager {
-    fn is_cached(&self, path: &str) -> bool {
-        self.cache_set.contains(path)
-    }
-
-    fn cache(&mut self, path: String) {
-        self.cache_set.insert(path);
-    }
-
-    fn clear_cache(&mut self) {
-        self.cache_set.clear();
-    }
-}
-
-impl AsDataManager for DataManager {
+impl AsDataManager for MemDataManager {
     fn divide(&self) -> Box<dyn AsDataManager> {
-        Box::new(Self {
-            global: self.global.clone(),
-            cache: MemTable::new(),
-            cache_set: HashSet::new(),
-        })
-    }
-
-    fn get_target(
-        &mut self,
-        source: &str,
-        code: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<String>> + Send>> {
-        let rs = if self.is_cached(&format!("{source}->{code}")) {
-            Ok(self.cache.get_target(source, code).unwrap_or_default())
-        } else {
-            let global = self.global.lock().unwrap();
-            match global.get_target(source, code) {
-                Some(target) => Ok(target),
-                None => Ok(String::new()),
-            }
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn get_source(
-        &mut self,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<String>> + Send>> {
-        let rs = if self.is_cached(&format!("{target}<-{code}")) {
-            Ok(self.cache.get_source(code, target).unwrap_or_default())
-        } else {
-            let global = self.global.lock().unwrap();
-            match global.get_source(code, target) {
-                Some(source) => Ok(source),
-                None => Ok(String::new()),
-            }
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn get_target_v(
-        &mut self,
-        source: &str,
-        code: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Vec<String>>> + Send>> {
-        let rs = {
-            if self.is_cached(&format!("{source}->{code}")) {
-                Ok(self.cache.get_target_v_unchecked(source, code))
-            } else {
-                let mut global = self.global.lock().unwrap();
-                let rs = global.get_target_v_unchecked(source, code);
-                drop(global);
-                self.cache.delete_saved_edge_with_source_code(source, code);
-                for target in &rs {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-                self.cache(format!("{source}->{code}"));
-                Ok(self.cache.get_target_v_unchecked(source, code))
-            }
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn get_source_v(
-        &mut self,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Vec<String>>> + Send>> {
-        let rs = {
-            if self.is_cached(&format!("{target}<-{code}")) {
-                Ok(self.cache.get_source_v_unchecked(code, target))
-            } else {
-                let mut global = self.global.lock().unwrap();
-                let rs = global.get_source_v_unchecked(code, target);
-                drop(global);
-                self.cache.delete_saved_edge_with_code_target(code, target);
-                for source in &rs {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-                self.cache(format!("{target}<-{code}"));
-                Ok(self.cache.get_source_v_unchecked(code, target))
-            }
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn load_target_v(
-        &mut self,
-        source: &str,
-        code: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>> {
-        let rs = {
-            if !self.is_cached(&format!("{source}->{code}")) {
-                let mut global = self.global.lock().unwrap();
-                let rs = global.get_target_v_unchecked(source, code);
-                drop(global);
-                self.cache.delete_saved_edge_with_source_code(source, code);
-                for target in &rs {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-                self.cache(format!("{source}->{code}"));
-            }
-            Ok(())
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn load_source_v(
-        &mut self,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>> {
-        let rs = {
-            if !self.is_cached(&format!("{target}<-{code}")) {
-                let mut global = self.global.lock().unwrap();
-                let rs = global.get_source_v_unchecked(code, target);
-                drop(global);
-                self.cache.delete_saved_edge_with_code_target(code, target);
-                for source in &rs {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-                self.cache(format!("{target}<-{code}"));
-            }
-            Ok(())
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn append_target_v(
-        &mut self,
-        source: &str,
-        code: &str,
-        target_v: &Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let rs = {
-            if is_temp(code) {
-                for target in target_v {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-            } else {
-                if !self.is_cached(&format!("{source}->{code}")) {
-                    let mut global = self.global.lock().unwrap();
-                    let rs = global.get_target_v_unchecked(source, code);
-                    drop(global);
-                    self.cache.delete_saved_edge_with_source_code(source, code);
-                    for target in &rs {
-                        self.cache.insert_temp_edge(source, code, target);
-                    }
-                }
-                for target in target_v {
-                    self.cache.insert_edge(source, code, target);
-                }
-            }
-            self.cache(format!("{source}->{code}"));
-            Ok(())
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn append_source_v(
-        &mut self,
-        source_v: &Vec<String>,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let rs = {
-            if is_temp(code) {
-                for source in source_v {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-            } else {
-                if !self.is_cached(&format!("{target}<-{code}")) {
-                    let mut global = self.global.lock().unwrap();
-                    let rs = global.get_source_v_unchecked(code, target);
-                    drop(global);
-                    self.cache.delete_saved_edge_with_code_target(code, target);
-                    for source in &rs {
-                        self.cache.insert_temp_edge(source, code, target);
-                    }
-                }
-                for source in source_v {
-                    self.cache.insert_edge(source, code, target);
-                }
-            }
-            self.cache(format!("{target}<-{code}"));
-            Ok(())
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn set_target_v(
-        &mut self,
-        source: &str,
-        code: &str,
-        target_v: &Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let rs = {
-            self.cache.delete_edge_with_source_code(source, code);
-            if is_temp(code) {
-                for target in target_v {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-            } else {
-                let mut global = self.global.lock().unwrap();
-                global.delete_edge_with_source_code(source, code);
-                drop(global);
-                for target in target_v {
-                    self.cache.insert_edge(source, code, target);
-                }
-            }
-            self.cache(format!("{source}->{code}"));
-            Ok(())
-        };
-        Box::pin(future::ready(rs))
-    }
-
-    fn set_source_v(
-        &mut self,
-        source_v: &Vec<String>,
-        code: &str,
-        target: &str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let rs = {
-            self.cache.delete_edge_with_code_target(code, target);
-            if is_temp(code) {
-                for source in source_v {
-                    self.cache.insert_temp_edge(source, code, target);
-                }
-            } else {
-                let mut global = self.global.lock().unwrap();
-                global.delete_edge_with_code_target(code, target);
-                drop(global);
-                for source in source_v {
-                    self.cache.insert_edge(source, code, target);
-                }
-            }
-            self.cache(format!("{target}<-{code}"));
-            Ok(())
-        };
-        Box::pin(future::ready(rs))
+        Box::new(self.clone())
     }
 
     fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        self.clear_cache();
-        let rs = {
-            let mut global = self.global.lock().unwrap();
-            for (_, edge) in self.cache.take() {
-                global.insert_edge(&edge.source, &edge.code, &edge.target);
+        Box::pin(future::ready(Ok(())))
+    }
+
+    fn append(
+        &mut self,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(())));
+        }
+        let mut mdm = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = mdm.get(&path).await?;
+            let mut mem_table = mdm.mem_table.lock().await;
+            for source in &root_v {
+                for target in &item_v {
+                    mem_table.insert_edge(source, &step.code, target);
+                }
             }
             Ok(())
-        };
-        Box::pin(future::ready(rs))
+        })
+    }
+
+    fn set(
+        &mut self,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(())));
+        }
+        let mut mdm = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = mdm.get(&path).await?;
+            let mut mem_table = mdm.mem_table.lock().await;
+            for source in &root_v {
+                for target in &item_v {
+                    mem_table.delete_edge_with_source_code(source, &step.code);
+                    mem_table.insert_edge(source, &step.code, target);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn get(
+        &mut self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
+        let mdm = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let mut mem_table = mdm.mem_table.lock().await;
+            let mut rs = vec![path.root.clone()];
+            while !path.step_v.is_empty() {
+                let step = path.step_v.remove(0);
+                if step.arrow == "->" {
+                    let mut n_rs = Vec::new();
+                    for source in &rs {
+                        n_rs.extend(mem_table.get_target_v(source, &step.code));
+                    }
+                    rs = n_rs;
+                } else {
+                    let mut n_rs = Vec::new();
+                    for target in &rs {
+                        n_rs.extend(mem_table.get_source_v(&step.code, target));
+                    }
+                    rs = n_rs;
+                }
+            }
+            Ok(rs)
+        })
+    }
+}
+
+struct CachePair {
+    item_v: Vec<String>,
+    offset: usize,
+}
+
+pub struct RecDataManager {
+    global: Arc<Mutex<Box<dyn AsDataManager>>>,
+    cache: Arc<Mutex<HashMap<Path, CachePair>>>,
+}
+
+impl RecDataManager {
+    pub fn new(global: Box<dyn AsDataManager>) -> Self {
+        Self {
+            global: Arc::new(Mutex::new(global)),
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    async fn prune_cache_on_write(
+        cache: &mut HashMap<Path, CachePair>,
+        n_path: &Path,
+        global: &mut Box<dyn AsDataManager>,
+    ) -> io::Result<()> {
+        if n_path.step_v.is_empty() {
+            return Ok(());
+        }
+        let path_v: Vec<Path> = cache.keys().cloned().collect();
+        let code = &n_path.step_v.last().unwrap().code;
+        for path in &path_v {
+            if path == n_path {
+                continue;
+            }
+            if path.step_v.iter().filter(|step| step.code == *code).count() > 0 {
+                let pair = cache.remove(path).unwrap();
+                let item_v = &pair.item_v[pair.offset..];
+                global.append(&path, item_v.to_vec()).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn prune_cache_on_read(
+        cache: &mut HashMap<Path, CachePair>,
+        n_path: &Path,
+        global: &mut Box<dyn AsDataManager>,
+    ) -> io::Result<()> {
+        if n_path.step_v.is_empty() {
+            return Ok(());
+        }
+        let path_v: Vec<Path> = cache.keys().cloned().collect();
+        let n_step = &n_path.step_v.last().unwrap();
+        for path in &path_v {
+            if path == n_path {
+                continue;
+            }
+            if path
+                .step_v
+                .iter()
+                .filter(|step| step.code == n_step.code && step.arrow != n_step.arrow)
+                .count()
+                > 0
+            {
+                let pair = cache.remove(path).unwrap();
+                let item_v = &pair.item_v[pair.offset..];
+                global.append(&path, item_v.to_vec()).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl AsDataManager for RecDataManager {
+    fn divide(&self) -> Box<dyn AsDataManager> {
+        Box::new(Self {
+            global: self.global.clone(),
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let global = self.global.clone();
+        let cache = self.cache.clone();
+        Box::pin(async move {
+            let mut cache = cache.lock().await;
+            let cache_mp = mem::take(&mut *cache);
+            drop(cache);
+            let mut global = global.lock().await;
+            let mut arr: Vec<(Path, CachePair)> = cache_mp.into_iter().map(|r| r).collect();
+            arr.sort_by(|p, q| p.0.step_v.len().cmp(&q.0.step_v.len()));
+            for (path, pair) in &arr {
+                let item_v = &pair.item_v[pair.offset..];
+                global.append(path, item_v.to_vec()).await?;
+            }
+
+            Ok(())
+        })
+    }
+
+    fn append(
+        &mut self,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(())));
+        }
+        if path.step_v.last().unwrap().arrow != "->" {
+            return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
+        }
+        let global = self.global.clone();
+        let cache = self.cache.clone();
+        let path = path.clone();
+        Box::pin(async move {
+            let mut cache = cache.lock().await;
+
+            if is_temp(&path.step_v.last().unwrap().code) {
+                match cache.get_mut(&path) {
+                    Some(rs) => {
+                        rs.item_v.extend(item_v);
+                        rs.offset = rs.item_v.len();
+                    }
+                    None => {
+                        let offset = item_v.len();
+                        cache.insert(path.clone(), CachePair { item_v, offset });
+                    }
+                }
+                return Ok(());
+            }
+
+            let mut global = global.lock().await;
+            Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
+
+            if let Some(rs) = cache.get_mut(&path) {
+                rs.item_v.extend(item_v);
+                return Ok(());
+            }
+
+            let mut rs0 = global.get(&path).await?;
+            let offset = rs0.len();
+            rs0.extend(item_v);
+            cache.insert(
+                path.clone(),
+                CachePair {
+                    item_v: rs0,
+                    offset,
+                },
+            );
+            Ok(())
+        })
+    }
+
+    fn set(
+        &mut self,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(())));
+        }
+        if path.step_v.last().unwrap().arrow != "->" {
+            return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
+        }
+        let global = self.global.clone();
+        let cache = self.cache.clone();
+        let path = path.clone();
+        Box::pin(async move {
+            let mut cache = cache.lock().await;
+
+            if is_temp(&path.step_v.last().unwrap().code) {
+                let offset = item_v.len();
+                cache.insert(path.clone(), CachePair { item_v, offset });
+                return Ok(());
+            }
+
+            let mut global = global.lock().await;
+            Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
+
+            global.set(&path, vec![]).await?;
+            cache.insert(path.clone(), CachePair { item_v, offset: 0 });
+            Ok(())
+        })
+    }
+
+    fn get(
+        &mut self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
+        let global = self.global.clone();
+        let cache = self.cache.clone();
+        let path = path.clone();
+        Box::pin(async move {
+            let mut cache = cache.lock().await;
+            if let Some(rs) = cache.get(&path) {
+                return Ok(rs.item_v.clone());
+            }
+
+            let mut global = global.lock().await;
+            Self::prune_cache_on_read(&mut *cache, &path, &mut *global).await?;
+            let item_v = global.get(&path).await?;
+            cache.insert(
+                path,
+                CachePair {
+                    item_v: item_v.clone(),
+                    offset: item_v.len(),
+                },
+            );
+            Ok(item_v)
+        })
     }
 }
