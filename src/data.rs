@@ -9,7 +9,7 @@ pub fn is_temp(code: &str) -> bool {
 }
 
 // Public
-pub trait AsDataManager: Send {
+pub trait AsDataManager: Send + Sync {
     fn divide(&self) -> Box<dyn AsDataManager>;
 
     /// Get all targets from `source->code`
