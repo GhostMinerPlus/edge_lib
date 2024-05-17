@@ -163,6 +163,9 @@ async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()
     } else {
         dm.append(&path, rs).await?;
     }
+    if path.root.starts_with('$') {
+        return Ok(());
+    }
     on_asigned(dm, &path.step_v.last().unwrap().code).await
 }
 
