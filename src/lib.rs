@@ -341,16 +341,26 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
     Ok(inc_v)
 }
 
+#[derive(Clone, Debug)]
+struct Inc {
+    pub output: IncValue,
+    pub operator: IncValue,
+    pub function: IncValue,
+    pub input: IncValue,
+    pub input1: IncValue,
+}
+
+// Public
 #[derive(Clone, Eq, Hash, PartialEq)]
-struct Step {
-    arrow: String,
-    code: String,
+pub struct Step {
+    pub arrow: String,
+    pub code: String,
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Path {
-    root: String,
-    step_v: Vec<Step>,
+    pub root: String,
+    pub step_v: Vec<Step>,
 }
 
 impl Path {
@@ -451,16 +461,6 @@ impl IncValue {
     }
 }
 
-#[derive(Clone, Debug)]
-struct Inc {
-    pub output: IncValue,
-    pub operator: IncValue,
-    pub function: IncValue,
-    pub input: IncValue,
-    pub input1: IncValue,
-}
-
-// Public
 pub mod data;
 pub mod err;
 pub mod mem_table;
