@@ -4,10 +4,6 @@ use tokio::sync::Mutex;
 
 use crate::{mem_table, Path};
 
-pub fn is_temp(code: &str) -> bool {
-    code.starts_with('$')
-}
-
 // Public
 pub trait AsDataManager: Send + Sync {
     fn divide(&self) -> Box<dyn AsDataManager>;
@@ -344,21 +340,6 @@ impl AsDataManager for RecDataManager {
         let path = path.clone();
         Box::pin(async move {
             let mut cache = cache.lock().await;
-
-            if is_temp(&path.step_v.last().unwrap().code) {
-                match cache.get_mut(&path) {
-                    Some(rs) => {
-                        rs.item_v.extend(item_v);
-                        rs.offset = rs.item_v.len();
-                    }
-                    None => {
-                        let offset = item_v.len();
-                        cache.insert(path.clone(), CachePair { item_v, offset });
-                    }
-                }
-                return Ok(());
-            }
-
             let mut global = global.lock().await;
             Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
 
@@ -397,13 +378,6 @@ impl AsDataManager for RecDataManager {
         let path = path.clone();
         Box::pin(async move {
             let mut cache = cache.lock().await;
-
-            if is_temp(&path.step_v.last().unwrap().code) {
-                let offset = item_v.len();
-                cache.insert(path.clone(), CachePair { item_v, offset });
-                return Ok(());
-            }
-
             let mut global = global.lock().await;
             Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
 
