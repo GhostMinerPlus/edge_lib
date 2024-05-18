@@ -142,6 +142,7 @@ impl AsDataManager for MemDataManager {
     }
 }
 
+#[derive(Clone)]
 struct CachePair {
     item_v: Vec<String>,
     offset: usize,
@@ -169,6 +170,7 @@ impl RecDataManager {
         if n_path.step_v.is_empty() {
             return Ok(());
         }
+        let mut temp_cache = cache.clone();
         let path_v: Vec<Path> = cache.keys().cloned().collect();
         let code = &n_path.step_v.last().unwrap().code;
         for path in &path_v {
@@ -181,7 +183,7 @@ impl RecDataManager {
 
                 let mut path = path.clone();
                 let step = path.step_v.pop().unwrap();
-                let root_v = Self::get_from_cache(&*cache, &path).await?;
+                let root_v = Self::get_from_other(&mut temp_cache, global, &path).await?;
                 for source in &root_v {
                     global
                         .append(
@@ -203,6 +205,7 @@ impl RecDataManager {
         if n_path.step_v.is_empty() {
             return Ok(());
         }
+        let mut temp_cache = cache.clone();
         let path_v: Vec<Path> = cache.keys().cloned().collect();
         let n_step = &n_path.step_v.last().unwrap();
         for path in &path_v {
@@ -218,7 +221,7 @@ impl RecDataManager {
             {
                 let mut root_path = path.clone();
                 let step = root_path.step_v.pop().unwrap();
-                let root_v = Self::get_from_cache(cache, &root_path).await?;
+                let root_v = Self::get_from_other(&mut temp_cache, global, &root_path).await?;
 
                 let pair = cache.get_mut(&path).unwrap();
                 let item_v = &pair.item_v[pair.offset..];
@@ -237,8 +240,9 @@ impl RecDataManager {
     }
 
     #[async_recursion::async_recursion]
-    async fn get_from_cache(
-        cache: &HashMap<Path, CachePair>,
+    async fn get_from_other(
+        cache: &mut HashMap<Path, CachePair>,
+        global: &mut Box<dyn AsDataManager>,
         path: &Path,
     ) -> io::Result<Vec<String>> {
         if path.step_v.is_empty() {
@@ -269,12 +273,21 @@ impl RecDataManager {
             for root in temp_v {
                 let mut sub_path = rest_apth.clone();
                 sub_path.root = root;
-                rs.extend(Self::get_from_cache(cache, &sub_path).await?);
+                rs.extend(Self::get_from_other(cache, global, &sub_path).await?);
             }
             return Ok(rs);
-        } else {
-            return Ok(vec![]);
         }
+
+        Self::prune_cache_on_read(&mut *cache, &path, &mut *global).await?;
+        let item_v = global.get(&path).await?;
+        cache.insert(
+            path.clone(),
+            CachePair {
+                item_v: item_v.clone(),
+                offset: item_v.len(),
+            },
+        );
+        Ok(item_v)
     }
 }
 
@@ -291,6 +304,7 @@ impl AsDataManager for RecDataManager {
         Box::pin(async move {
             let mut cache = this.cache.lock().await;
             let mut global = this.global.lock().await;
+            let mut temp_cache = cache.clone();
             let mut arr: Vec<Path> = cache.keys().map(|k| k.clone()).collect();
             arr.sort_by(|p, q| p.step_v.len().cmp(&q.step_v.len()));
             for mut path in arr {
@@ -298,7 +312,7 @@ impl AsDataManager for RecDataManager {
                 let item_v = &pair.item_v[pair.offset..];
 
                 let step = path.step_v.pop().unwrap();
-                let root_v = Self::get_from_cache(&*cache, &path).await?;
+                let root_v = Self::get_from_other(&mut temp_cache, &mut global, &path).await?;
                 for source in &root_v {
                     global
                         .append(
