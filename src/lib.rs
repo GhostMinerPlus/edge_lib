@@ -163,7 +163,7 @@ async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()
     } else {
         dm.append(&path, rs).await?;
     }
-    if path.root.starts_with('$') {
+    if path.is_temp() {
         return Ok(());
     }
     on_asigned(dm, &path.step_v.last().unwrap().code).await
@@ -412,6 +412,26 @@ impl Path {
             s = format!("{s}{}{}", step.arrow, step.code);
         }
         s
+    }
+
+    pub fn is_temp(&self) -> bool {
+        if self.step_v.is_empty() {
+            return false;
+        }
+        self.step_v.last().unwrap().code.starts_with('$')
+    }
+
+    pub fn contains_temp(&self) -> bool {
+        self.find_temp().is_some()
+    }
+
+    pub fn find_temp(&self) -> Option<usize> {
+        for i in 0..self.step_v.len() {
+            if self.step_v[i].code.starts_with('$') {
+                return Some(i);
+            }
+        }
+        None
     }
 }
 
