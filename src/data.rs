@@ -322,16 +322,47 @@ impl AsDataManager for RecDataManager {
         &mut self,
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
-        let global = self.global.clone();
-        let cache = self.cache.clone();
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
+        }
+        let global_mut = self.global.clone();
+        let cache_mut = self.cache.clone();
         let path = path.clone();
         Box::pin(async move {
-            let mut cache = cache.lock().await;
+            let cache = cache_mut.lock().await;
             if let Some(rs) = cache.get(&path) {
                 return Ok(rs.item_v.clone());
             }
+            let mut path_in_part = path.clone();
+            let mut rest_apth = Path::from_str("root");
+            let mut temp_v = None;
+            while !path_in_part.step_v.is_empty() {
+                rest_apth
+                    .step_v
+                    .insert(0, path_in_part.step_v.pop().unwrap());
+                if let Some(rs) = cache.get(&path_in_part) {
+                    temp_v = Some(rs.item_v.clone());
+                    break;
+                }
+            }
+            drop(cache);
 
-            let mut global = global.lock().await;
+            if let Some(temp_v) = temp_v {
+                let mut rs = Vec::new();
+                for root in temp_v {
+                    let mut sub_path = rest_apth.clone();
+                    sub_path.root = root;
+                    let mut this = Self {
+                        global: global_mut.clone(),
+                        cache: cache_mut.clone(),
+                    };
+                    rs.extend(this.get(&sub_path).await?);
+                }
+                return Ok(rs);
+            }
+
+            let mut cache = cache_mut.lock().await;
+            let mut global = global_mut.lock().await;
             Self::prune_cache_on_read(&mut *cache, &path, &mut *global).await?;
             let item_v = global.get(&path).await?;
             cache.insert(
