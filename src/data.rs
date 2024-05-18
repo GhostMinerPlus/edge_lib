@@ -108,6 +108,12 @@ impl AsDataManager for MemDataManager {
         &mut self,
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
+        if path.step_v.is_empty() {
+            if path.root.is_empty() {
+                return Box::pin(future::ready(Ok(vec![])));
+            }
+            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
+        }
         let mdm = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
@@ -323,6 +329,9 @@ impl AsDataManager for RecDataManager {
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
+            if path.root.is_empty() {
+                return Box::pin(future::ready(Ok(vec![])));
+            }
             return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
         let global_mut = self.global.clone();
