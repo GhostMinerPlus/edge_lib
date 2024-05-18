@@ -196,9 +196,10 @@ impl RecDataManager {
                 .count()
                 > 0
             {
-                let pair = cache.remove(path).unwrap();
+                let pair = cache.get_mut(path).unwrap();
                 let item_v = &pair.item_v[pair.offset..];
                 global.append(&path, item_v.to_vec()).await?;
+                pair.offset = pair.item_v.len();
             }
         }
         Ok(())
