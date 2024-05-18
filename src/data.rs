@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future, io, mem, pin::Pin, sync::Arc};
+use std::{collections::HashMap, future, io, pin::Pin, sync::Arc};
 
 use tokio::sync::Mutex;
 
@@ -95,8 +95,10 @@ impl AsDataManager for MemDataManager {
             let root_v = mdm.get(&path).await?;
             let mut mem_table = mdm.mem_table.lock().await;
             for source in &root_v {
+                mem_table.delete_edge_with_source_code(source, &step.code);
+            }
+            for source in &root_v {
                 for target in &item_v {
-                    mem_table.delete_edge_with_source_code(source, &step.code);
                     mem_table.insert_edge(source, &step.code, target);
                 }
             }
@@ -145,6 +147,7 @@ struct CachePair {
     offset: usize,
 }
 
+#[derive(Clone)]
 pub struct RecDataManager {
     global: Arc<Mutex<Box<dyn AsDataManager>>>,
     cache: Arc<Mutex<HashMap<Path, CachePair>>>,
@@ -175,7 +178,18 @@ impl RecDataManager {
             if path.step_v.iter().filter(|step| step.code == *code).count() > 0 {
                 let pair = cache.remove(path).unwrap();
                 let item_v = &pair.item_v[pair.offset..];
-                global.append(&path, item_v.to_vec()).await?;
+
+                let mut path = path.clone();
+                let step = path.step_v.pop().unwrap();
+                let root_v = Self::get_from_cache(&*cache, &path).await?;
+                for source in &root_v {
+                    global
+                        .append(
+                            &Path::from_str(&format!("{source}->{}", step.code)),
+                            item_v.to_vec(),
+                        )
+                        .await?;
+                }
             }
         }
         Ok(())
@@ -202,13 +216,65 @@ impl RecDataManager {
                 .count()
                 > 0
             {
-                let pair = cache.get_mut(path).unwrap();
+                let mut root_path = path.clone();
+                let step = root_path.step_v.pop().unwrap();
+                let root_v = Self::get_from_cache(cache, &root_path).await?;
+
+                let pair = cache.get_mut(&path).unwrap();
                 let item_v = &pair.item_v[pair.offset..];
-                global.append(&path, item_v.to_vec()).await?;
+                for source in &root_v {
+                    global
+                        .append(
+                            &Path::from_str(&format!("{source}->{}", step.code)),
+                            item_v.to_vec(),
+                        )
+                        .await?;
+                }
                 pair.offset = pair.item_v.len();
             }
         }
         Ok(())
+    }
+
+    #[async_recursion::async_recursion]
+    async fn get_from_cache(
+        cache: &HashMap<Path, CachePair>,
+        path: &Path,
+    ) -> io::Result<Vec<String>> {
+        if path.step_v.is_empty() {
+            if path.root.is_empty() {
+                return Ok(vec![]);
+            }
+            return Ok(vec![path.root.clone()]);
+        }
+
+        if let Some(rs) = cache.get(&path) {
+            return Ok(rs.item_v.clone());
+        }
+        let mut path_in_part = path.clone();
+        let mut rest_apth = Path::from_str("root");
+        let mut temp_v = None;
+        while !path_in_part.step_v.is_empty() {
+            rest_apth
+                .step_v
+                .insert(0, path_in_part.step_v.pop().unwrap());
+            if let Some(rs) = cache.get(&path_in_part) {
+                temp_v = Some(rs.item_v.clone());
+                break;
+            }
+        }
+
+        if let Some(temp_v) = temp_v {
+            let mut rs = Vec::new();
+            for root in temp_v {
+                let mut sub_path = rest_apth.clone();
+                sub_path.root = root;
+                rs.extend(Self::get_from_cache(cache, &sub_path).await?);
+            }
+            return Ok(rs);
+        } else {
+            return Ok(vec![]);
+        }
     }
 }
 
@@ -221,20 +287,29 @@ impl AsDataManager for RecDataManager {
     }
 
     fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let global = self.global.clone();
-        let cache = self.cache.clone();
+        let this = self.clone();
         Box::pin(async move {
-            let mut cache = cache.lock().await;
-            let cache_mp = mem::take(&mut *cache);
-            drop(cache);
-            let mut global = global.lock().await;
-            let mut arr: Vec<(Path, CachePair)> = cache_mp.into_iter().map(|r| r).collect();
-            arr.sort_by(|p, q| p.0.step_v.len().cmp(&q.0.step_v.len()));
-            for (path, pair) in &arr {
+            let mut cache = this.cache.lock().await;
+            let mut global = this.global.lock().await;
+            let mut arr: Vec<Path> = cache.keys().map(|k| k.clone()).collect();
+            arr.sort_by(|p, q| p.step_v.len().cmp(&q.step_v.len()));
+            for mut path in arr {
+                let pair = &cache[&path];
                 let item_v = &pair.item_v[pair.offset..];
-                global.append(path, item_v.to_vec()).await?;
+
+                let step = path.step_v.pop().unwrap();
+                let root_v = Self::get_from_cache(&*cache, &path).await?;
+                for source in &root_v {
+                    global
+                        .append(
+                            &Path::from_str(&format!("{source}->{}", step.code)),
+                            item_v.to_vec(),
+                        )
+                        .await?;
+                }
             }
 
+            cache.clear();
             Ok(())
         })
     }
