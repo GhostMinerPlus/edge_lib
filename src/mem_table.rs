@@ -1,6 +1,4 @@
-use std::
-    collections::{BTreeMap, BTreeSet}
-;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn insert(mp: &mut BTreeMap<(String, String), BTreeSet<u64>>, k: (String, String), v: u64) {
     if let Some(uuid_v) = mp.get_mut(&k) {
@@ -107,5 +105,12 @@ impl MemTable {
                     .remove(uuid);
             }
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.id = 0;
+        self.edge_mp.clear();
+        self.inx_source_code.clear();
+        self.inx_code_target.clear();
     }
 }

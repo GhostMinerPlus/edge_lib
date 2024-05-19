@@ -354,6 +354,19 @@ struct Inc {
 }
 
 // Public
+pub enum PathType {
+    Pure,
+    Temp,
+    Mixed,
+}
+
+pub enum PathPart {
+    Pure(Path),
+    Temp(Path),
+    EntirePure,
+    EntireTemp,
+}
+
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Step {
     pub arrow: String,
@@ -421,17 +434,58 @@ impl Path {
         self.step_v.last().unwrap().code.starts_with('$')
     }
 
-    pub fn contains_temp(&self) -> bool {
-        self.find_temp().is_some()
-    }
-
-    pub fn find_temp(&self) -> Option<usize> {
+    pub fn path_type(&self) -> PathType {
+        let mut cnt = 0;
         for i in 0..self.step_v.len() {
             if self.step_v[i].code.starts_with('$') {
-                return Some(i);
+                cnt += 1;
             }
         }
-        None
+        if cnt == 0 {
+            PathType::Pure
+        } else if cnt == self.step_v.len() {
+            PathType::Temp
+        } else {
+            PathType::Mixed
+        }
+    }
+
+    pub fn first_part(&self) -> PathPart {
+        if self.step_v.is_empty() {
+            return PathPart::EntirePure;
+        }
+        let first_step = &self.step_v[0];
+        if first_step.code.starts_with('$') {
+            let mut end = 1;
+            for i in 1..self.step_v.len() {
+                if !self.step_v[i].code.starts_with('$') {
+                    break;
+                }
+                end += 1;
+            }
+            if end == self.step_v.len() {
+                return PathPart::EntireTemp;
+            }
+            PathPart::Temp(Path {
+                root: self.root.clone(),
+                step_v: self.step_v[0..end].to_vec()
+            })
+        } else {
+            let mut end = 1;
+            for i in 1..self.step_v.len() {
+                if self.step_v[i].code.starts_with('$') {
+                    break;
+                }
+                end += 1;
+            }
+            if end == self.step_v.len() {
+                return PathPart::EntirePure;
+            }
+            PathPart::Pure(Path {
+                root: self.root.clone(),
+                step_v: self.step_v[0..end].to_vec()
+            })
+        }
     }
 }
 

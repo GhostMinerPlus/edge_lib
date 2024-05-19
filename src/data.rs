@@ -2,7 +2,7 @@ use std::{collections::HashMap, future, io, pin::Pin, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{mem_table, Path};
+use crate::{mem_table, Path, PathPart};
 
 // Public
 pub trait AsDataManager: Send + Sync {
@@ -28,6 +28,8 @@ pub trait AsDataManager: Send + Sync {
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
 
+    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
+
     fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 }
 
@@ -47,6 +49,15 @@ impl MemDataManager {
 impl AsDataManager for MemDataManager {
     fn divide(&self) -> Box<dyn AsDataManager> {
         Box::new(self.clone())
+    }
+
+    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        Box::pin(async move {
+            let mut mem_table = this.mem_table.lock().await;
+            mem_table.clear();
+            Ok(())
+        })
     }
 
     fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
@@ -139,6 +150,198 @@ impl AsDataManager for MemDataManager {
 }
 
 #[derive(Clone)]
+struct UnitDataManager {
+    global: Arc<Mutex<Box<dyn AsDataManager>>>,
+    temp: Arc<Mutex<MemDataManager>>,
+}
+
+impl UnitDataManager {
+    fn new(global: Box<dyn AsDataManager>) -> Self {
+        Self {
+            global: Arc::new(Mutex::new(global)),
+            temp: Arc::new(Mutex::new(MemDataManager::new())),
+        }
+    }
+}
+
+impl AsDataManager for UnitDataManager {
+    fn divide(&self) -> Box<dyn AsDataManager> {
+        Box::new(self.clone())
+    }
+
+    fn append(
+        &mut self,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(())));
+        }
+        if path.step_v.last().unwrap().arrow != "->" {
+            return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
+        }
+        let mut this = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = this.get(&path).await?;
+            if path.is_temp() {
+                let mut temp = this.temp.lock().await;
+                for root in &root_v {
+                    temp.append(
+                        &Path {
+                            root: root.clone(),
+                            step_v: vec![step.clone()],
+                        },
+                        item_v.clone(),
+                    )
+                    .await?;
+                }
+            } else {
+                let mut global = this.global.lock().await;
+                for root in &root_v {
+                    global
+                        .append(
+                            &Path {
+                                root: root.clone(),
+                                step_v: vec![step.clone()],
+                            },
+                            item_v.clone(),
+                        )
+                        .await?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn set(
+        &mut self,
+        path: &Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        if path.step_v.is_empty() {
+            return Box::pin(future::ready(Ok(())));
+        }
+        if path.step_v.last().unwrap().arrow != "->" {
+            return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
+        }
+        let mut this = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = this.get(&path).await?;
+            if path.is_temp() {
+                let mut temp = this.temp.lock().await;
+                for root in &root_v {
+                    temp.set(
+                        &Path {
+                            root: root.clone(),
+                            step_v: vec![step.clone()],
+                        },
+                        item_v.clone(),
+                    )
+                    .await?;
+                }
+            } else {
+                let mut global = this.global.lock().await;
+                for root in &root_v {
+                    global
+                        .set(
+                            &Path {
+                                root: root.clone(),
+                                step_v: vec![step.clone()],
+                            },
+                            item_v.clone(),
+                        )
+                        .await?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn get(
+        &mut self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
+        if path.step_v.is_empty() {
+            if path.root.is_empty() {
+                return Box::pin(future::ready(Ok(vec![])));
+            }
+            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
+        }
+        let mut this = self.clone();
+        let path = path.clone();
+        Box::pin(async move {
+            match path.first_part() {
+                PathPart::Pure(part_path) => {
+                    let mut global = this.global.lock().await;
+                    let item_v = global.get(&part_path).await?;
+                    drop(global);
+
+                    let mut rs = Vec::new();
+                    for root in item_v {
+                        rs.extend(
+                            this.get(&Path {
+                                root,
+                                step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                            })
+                            .await?,
+                        );
+                    }
+
+                    Ok(rs)
+                }
+                PathPart::Temp(part_path) => {
+                    let mut temp = this.temp.lock().await;
+                    let item_v = temp.get(&part_path).await?;
+                    drop(temp);
+
+                    let mut rs = Vec::new();
+                    for root in item_v {
+                        rs.extend(
+                            this.get(&Path {
+                                root,
+                                step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                            })
+                            .await?,
+                        );
+                    }
+
+                    Ok(rs)
+                }
+                PathPart::EntirePure => {
+                    let mut global = this.global.lock().await;
+                    let item_v = global.get(&path).await?;
+                    Ok(item_v)
+                }
+                PathPart::EntireTemp => {
+                    let mut temp = this.temp.lock().await;
+                    let item_v = temp.get(&path).await?;
+                    Ok(item_v)
+                }
+            }
+        })
+    }
+
+    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        Box::pin(async move {
+            let mut temp = this.temp.lock().await;
+            temp.clear().await?;
+            drop(temp);
+            let mut global = this.global.lock().await;
+            global.clear().await
+        })
+    }
+
+    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        Box::pin(future::ready(Ok(())))
+    }
+}
+
+#[derive(Clone)]
 struct CachePair {
     item_v: Vec<String>,
     offset: usize,
@@ -146,14 +349,14 @@ struct CachePair {
 
 #[derive(Clone)]
 pub struct RecDataManager {
-    global: Arc<Mutex<Box<dyn AsDataManager>>>,
+    global: Arc<Mutex<UnitDataManager>>,
     cache: Arc<Mutex<HashMap<Path, CachePair>>>,
 }
 
 impl RecDataManager {
     pub fn new(global: Box<dyn AsDataManager>) -> Self {
         Self {
-            global: Arc::new(Mutex::new(global)),
+            global: Arc::new(Mutex::new(UnitDataManager::new(global))),
             cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -161,7 +364,7 @@ impl RecDataManager {
     async fn prune_cache_on_write(
         cache: &mut HashMap<Path, CachePair>,
         n_path: &Path,
-        global: &mut Box<dyn AsDataManager>,
+        global: &mut dyn AsDataManager,
     ) -> io::Result<()> {
         if n_path.step_v.is_empty() {
             return Ok(());
@@ -194,9 +397,9 @@ impl RecDataManager {
     }
 
     async fn prune_cache_on_read(
+        global: &mut dyn AsDataManager,
         cache: &mut HashMap<Path, CachePair>,
         n_path: &Path,
-        global: &mut Box<dyn AsDataManager>,
     ) -> io::Result<()> {
         if n_path.step_v.is_empty() {
             return Ok(());
@@ -238,7 +441,7 @@ impl RecDataManager {
     #[async_recursion::async_recursion]
     async fn get_from_other(
         cache: &mut HashMap<Path, CachePair>,
-        global: &mut Box<dyn AsDataManager>,
+        global: &mut dyn AsDataManager,
         path: &Path,
     ) -> io::Result<Vec<String>> {
         if path.step_v.is_empty() {
@@ -274,7 +477,7 @@ impl RecDataManager {
             return Ok(rs);
         }
 
-        Self::prune_cache_on_read(&mut *cache, &path, &mut *global).await?;
+        Self::prune_cache_on_read(&mut *global, &mut *cache, &path).await?;
         let item_v = global.get(&path).await?;
         cache.insert(
             path.clone(),
@@ -285,6 +488,36 @@ impl RecDataManager {
         );
         Ok(item_v)
     }
+
+    async fn get_in_cache(&mut self, path: &Path) -> io::Result<Option<Vec<String>>> {
+        let cache = self.cache.lock().await;
+        if let Some(rs) = cache.get(&path) {
+            return Ok(Some(rs.item_v.clone()));
+        }
+        let mut path_in_part = path.clone();
+        let mut rest_apth = Path::from_str("root");
+        let mut temp_v = None;
+        while !path_in_part.step_v.is_empty() {
+            rest_apth
+                .step_v
+                .insert(0, path_in_part.step_v.pop().unwrap());
+            if let Some(rs) = cache.get(&path_in_part) {
+                temp_v = Some(rs.item_v.clone());
+                break;
+            }
+        }
+        drop(cache);
+        if let Some(temp_v) = temp_v {
+            let mut rs = Vec::new();
+            for root in temp_v {
+                let mut sub_path = rest_apth.clone();
+                sub_path.root = root;
+                rs.extend(self.get(&sub_path).await?);
+            }
+            return Ok(Some(rs));
+        }
+        Ok(None)
+    }
 }
 
 impl AsDataManager for RecDataManager {
@@ -292,6 +525,17 @@ impl AsDataManager for RecDataManager {
         Box::new(Self {
             global: self.global.clone(),
             cache: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        Box::pin(async move {
+            let mut cache = this.cache.lock().await;
+            cache.clear();
+            drop(cache);
+            let mut global = this.global.lock().await;
+            global.clear().await
         })
     }
 
@@ -308,7 +552,7 @@ impl AsDataManager for RecDataManager {
                 let item_v = &pair.item_v[pair.offset..];
 
                 let step = path.step_v.pop().unwrap();
-                let root_v = Self::get_from_other(&mut temp_cache, &mut global, &path).await?;
+                let root_v = Self::get_from_other(&mut temp_cache, &mut *global, &path).await?;
                 for source in &root_v {
                     global
                         .append(
@@ -335,12 +579,11 @@ impl AsDataManager for RecDataManager {
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
         }
-        let global = self.global.clone();
-        let cache = self.cache.clone();
+        let this = self.clone();
         let path = path.clone();
         Box::pin(async move {
-            let mut cache = cache.lock().await;
-            let mut global = global.lock().await;
+            let mut cache = this.cache.lock().await;
+            let mut global = this.global.lock().await;
             Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
 
             if let Some(rs) = cache.get_mut(&path) {
@@ -373,12 +616,12 @@ impl AsDataManager for RecDataManager {
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
         }
-        let global = self.global.clone();
-        let cache = self.cache.clone();
+        let this = self.clone();
         let path = path.clone();
         Box::pin(async move {
-            let mut cache = cache.lock().await;
-            let mut global = global.lock().await;
+            let mut cache = this.cache.lock().await;
+
+            let mut global = this.global.lock().await;
             Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
 
             global.set(&path, vec![]).await?;
@@ -397,45 +640,16 @@ impl AsDataManager for RecDataManager {
             }
             return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
-        let global_mut = self.global.clone();
-        let cache_mut = self.cache.clone();
+        let mut this = self.clone();
         let path = path.clone();
         Box::pin(async move {
-            let cache = cache_mut.lock().await;
-            if let Some(rs) = cache.get(&path) {
-                return Ok(rs.item_v.clone());
-            }
-            let mut path_in_part = path.clone();
-            let mut rest_apth = Path::from_str("root");
-            let mut temp_v = None;
-            while !path_in_part.step_v.is_empty() {
-                rest_apth
-                    .step_v
-                    .insert(0, path_in_part.step_v.pop().unwrap());
-                if let Some(rs) = cache.get(&path_in_part) {
-                    temp_v = Some(rs.item_v.clone());
-                    break;
-                }
-            }
-            drop(cache);
-
-            if let Some(temp_v) = temp_v {
-                let mut rs = Vec::new();
-                for root in temp_v {
-                    let mut sub_path = rest_apth.clone();
-                    sub_path.root = root;
-                    let mut this = Self {
-                        global: global_mut.clone(),
-                        cache: cache_mut.clone(),
-                    };
-                    rs.extend(this.get(&sub_path).await?);
-                }
+            if let Some(rs) = this.get_in_cache(&path).await? {
                 return Ok(rs);
             }
 
-            let mut cache = cache_mut.lock().await;
-            let mut global = global_mut.lock().await;
-            Self::prune_cache_on_read(&mut *cache, &path, &mut *global).await?;
+            let mut cache = this.cache.lock().await;
+            let mut global = this.global.lock().await;
+            Self::prune_cache_on_read(&mut *global, &mut *cache, &path).await?;
             let item_v = global.get(&path).await?;
             cache.insert(
                 path,
