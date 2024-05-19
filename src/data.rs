@@ -183,9 +183,9 @@ impl AsDataManager for UnitDataManager {
         let mut this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
-            let step = path.step_v.pop().unwrap();
-            let root_v = this.get(&path).await?;
             if path.is_temp() {
+                let step = path.step_v.pop().unwrap();
+                let root_v = this.get(&path).await?;
                 let mut temp = this.temp.lock().await;
                 for root in &root_v {
                     temp.append(
@@ -198,6 +198,8 @@ impl AsDataManager for UnitDataManager {
                     .await?;
                 }
             } else {
+                let step = path.step_v.pop().unwrap();
+                let root_v = this.get(&path).await?;
                 let mut global = this.global.lock().await;
                 for root in &root_v {
                     global
@@ -229,9 +231,9 @@ impl AsDataManager for UnitDataManager {
         let mut this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
-            let step = path.step_v.pop().unwrap();
-            let root_v = this.get(&path).await?;
             if path.is_temp() {
+                let step = path.step_v.pop().unwrap();
+                let root_v = this.get(&path).await?;
                 let mut temp = this.temp.lock().await;
                 for root in &root_v {
                     temp.set(
@@ -244,6 +246,8 @@ impl AsDataManager for UnitDataManager {
                     .await?;
                 }
             } else {
+                let step = path.step_v.pop().unwrap();
+                let root_v = this.get(&path).await?;
                 let mut global = this.global.lock().await;
                 for root in &root_v {
                     global
