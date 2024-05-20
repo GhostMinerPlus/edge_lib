@@ -353,6 +353,15 @@ struct Inc {
     pub input1: IncValue,
 }
 
+fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
+    let mut value = json::object! {};
+    for next_item in &script_tree.next_v {
+        let sub_script = format!("{}\n{}", next_item.script, next_item.name);
+        let _ = value.insert(&sub_script, tree_2_entry(next_item));
+    }
+    value
+}
+
 // Public
 pub enum PathType {
     Pure,
@@ -596,10 +605,7 @@ impl EdgeEngine {
 
     pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
         let script = format!("{}\n{}", script_tree.script, script_tree.name);
-        let mut value = json::object! {};
-        for next_item in &script_tree.next_v {
-            let _ = value.insert(&next_item.name, Self::tree_2_entry(next_item));
-        }
+        let value = tree_2_entry(script_tree);
         let mut json = json::object! {};
         let _ = json.insert(&script, value);
         json
