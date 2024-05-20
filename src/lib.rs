@@ -575,7 +575,7 @@ impl EdgeEngine {
         Self { dm }
     }
 
-    fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
+    pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
         let mut next_v = Vec::with_capacity(next_v_json.len());
         for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
             next_v.push(Self::entry_2_tree(sub_script_str, sub_next_v_json));
