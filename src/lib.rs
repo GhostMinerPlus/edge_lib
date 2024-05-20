@@ -468,7 +468,7 @@ impl Path {
             }
             PathPart::Temp(Path {
                 root: self.root.clone(),
-                step_v: self.step_v[0..end].to_vec()
+                step_v: self.step_v[0..end].to_vec(),
             })
         } else {
             let mut end = 1;
@@ -483,7 +483,7 @@ impl Path {
             }
             PathPart::Pure(Path {
                 root: self.root.clone(),
-                step_v: self.step_v[0..end].to_vec()
+                step_v: self.step_v[0..end].to_vec(),
             })
         }
     }
@@ -592,6 +592,17 @@ impl EdgeEngine {
             name,
             next_v,
         }
+    }
+
+    pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
+        let script = format!("{}\n{}", script_tree.script, script_tree.name);
+        let mut value = json::object! {};
+        for next_item in &script_tree.next_v {
+            let _ = value.insert(&next_item.name, Self::tree_2_entry(next_item));
+        }
+        let mut json = json::object! {};
+        let _ = json.insert(&script, value);
+        json
     }
 }
 
