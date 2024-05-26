@@ -1,48 +1,10 @@
-mod inc;
-
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, io};
+use std::{collections::HashMap, fmt::Display, io, sync::Arc};
 
 use crate::data::AsDataManager;
 
 fn gen_root() -> String {
     format!("${}", uuid::Uuid::new_v4().to_string())
-}
-
-#[async_recursion::async_recursion]
-async fn on_asigned(dm: &mut Box<dyn AsDataManager>, code: &str) -> io::Result<()> {
-    let listener_v = dm
-        .get(&Path::from_str(&format!("{code}->listener")))
-        .await?;
-    for listener in &listener_v {
-        let target_v = dm
-            .get(&Path::from_str(&format!("{listener}->target")))
-            .await?;
-        if target_v.is_empty() {
-            continue;
-        }
-        let target = escape_word(&target_v[0]);
-        let inc_v = dump_inc_v(dm, listener)
-            .await?
-            .into_iter()
-            .map(|mut inc| {
-                *inc.output.as_mut() = inc.output.as_str().replace("$->$output", &target);
-                inc
-            })
-            .collect::<Vec<Inc>>();
-        let new_root = gen_root();
-        dm.set(
-            &Path::from_str(&format!("{new_root}->$input")),
-            vec![code.to_string()],
-        )
-        .await?;
-        for inc in &inc_v {
-            let inc = unwrap_inc(dm, &new_root, inc).await?;
-            invoke_inc(dm, &inc).await?;
-        }
-    }
-
-    Ok(())
 }
 
 async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
@@ -61,192 +23,6 @@ async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
     }
 }
 
-fn escape_word(word: &str) -> String {
-    let mut word = word.replace("\\'", "'");
-    if word.starts_with('\'') && word.ends_with('\'') {
-        word = word[1..word.len() - 1].to_string();
-    }
-    word
-}
-
-async fn dump_inc_v(dm: &mut Box<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
-    let output_v = dm
-        .get(&Path::from_str(&format!("{function}->inc->output")))
-        .await?;
-    let operator_v = dm
-        .get(&Path::from_str(&format!("{function}->inc->operator")))
-        .await?;
-    let function_v = dm
-        .get(&Path::from_str(&format!("{function}->inc->function")))
-        .await?;
-    let input_v = dm
-        .get(&Path::from_str(&format!("{function}->inc->input")))
-        .await?;
-    let input1_v = dm
-        .get(&Path::from_str(&format!("{function}->inc->input1")))
-        .await?;
-    let mut inc_v = Vec::with_capacity(output_v.len());
-    for i in 0..output_v.len() {
-        inc_v.push(Inc {
-            output: IncValue::from_string(escape_word(&output_v[i])),
-            operator: IncValue::from_string(escape_word(&operator_v[i])),
-            function: IncValue::from_string(escape_word(&function_v[i])),
-            input: IncValue::from_string(escape_word(&input_v[i])),
-            input1: IncValue::from_string(escape_word(&input1_v[i])),
-        });
-    }
-    Ok(inc_v)
-}
-
-#[async_recursion::async_recursion]
-async fn invoke_inc(dm: &mut Box<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
-    log::debug!("invoke_inc: {:?}", inc);
-    let path = Path::from_str(inc.output.as_str());
-    if path.step_v.is_empty() {
-        return Ok(());
-    }
-    let input_item_v = dm.get(&Path::from_str(inc.input.as_str())).await?;
-    let input1_item_v = dm.get(&Path::from_str(inc.input1.as_str())).await?;
-    let rs = match inc.function.as_str() {
-        //
-        "new" => inc::new(dm, input_item_v, input1_item_v).await?,
-        "line" => inc::line(dm, input_item_v, input1_item_v).await?,
-        "rand" => inc::rand(dm, input_item_v, input1_item_v).await?,
-        //
-        "append" => inc::append(dm, input_item_v, input1_item_v).await?,
-        "distinct" => inc::distinct(dm, input_item_v, input1_item_v).await?,
-        "left" => inc::left(dm, input_item_v, input1_item_v).await?,
-        "inner" => inc::inner(dm, input_item_v, input1_item_v).await?,
-        "if" => inc::if_(dm, input_item_v, input1_item_v).await?,
-        //
-        "+" => inc::add(dm, input_item_v, input1_item_v).await?,
-        "-" => inc::minus(dm, input_item_v, input1_item_v).await?,
-        "*" => inc::mul(dm, input_item_v, input1_item_v).await?,
-        "/" => inc::div(dm, input_item_v, input1_item_v).await?,
-        "%" => inc::rest(dm, input_item_v, input1_item_v).await?,
-        //
-        "==" => inc::equal(dm, input_item_v, input1_item_v).await?,
-        "!=" => inc::not_equal(dm, input_item_v, input1_item_v).await?,
-        ">" => inc::greater(dm, input_item_v, input1_item_v).await?,
-        "<" => inc::smaller(dm, input_item_v, input1_item_v).await?,
-        //
-        // "sort" => inc::sort(dm, input_item_v, input1_item_v).await?,
-        //
-        "count" => inc::count(dm, input_item_v, input1_item_v).await?,
-        "sum" => inc::sum(dm, input_item_v, input1_item_v).await?,
-        //
-        "=" => inc::set(dm, input_item_v, input1_item_v).await?,
-        _ => {
-            let inc_v = dump_inc_v(dm, inc.function.as_str()).await?;
-            let new_root = gen_root();
-            dm.set(
-                &Path::from_str(&format!("{new_root}->$input")),
-                input_item_v,
-            )
-            .await?;
-            dm.set(
-                &Path::from_str(&format!("{new_root}->$input1")),
-                input1_item_v,
-            )
-            .await?;
-            log::debug!("inc_v.len(): {}", inc_v.len());
-            for inc in &inc_v {
-                let inc = unwrap_inc(dm, &new_root, inc).await?;
-                invoke_inc(dm, &inc).await?;
-            }
-            dm.get(&Path::from_str(&format!("{new_root}->$output")))
-                .await?
-        }
-    };
-    if inc.operator.as_str() == "=" {
-        dm.set(&path, rs).await?;
-    } else {
-        dm.append(&path, rs).await?;
-    }
-    if path.is_temp() {
-        return Ok(());
-    }
-    on_asigned(dm, &path.step_v.last().unwrap().code).await
-}
-
-async fn get_one(dm: &mut Box<dyn AsDataManager>, root: &str, id: &str) -> io::Result<String> {
-    let path = unwrap_value(root, id).await?;
-    let id_v = dm.get(&Path::from_str(&path)).await?;
-    if id_v.len() != 1 {
-        return Err(io::Error::new(io::ErrorKind::NotFound, "need 1 but not"));
-    }
-    Ok(id_v[0].clone())
-}
-
-async fn unwrap_inc(dm: &mut Box<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<Inc> {
-    let inc = Inc {
-        output: IncValue::from_str(&unwrap_value(root, inc.output.as_str()).await?),
-        operator: IncValue::from_str(&get_one(dm, root, inc.operator.as_str()).await?),
-        function: IncValue::from_str(&get_one(dm, root, inc.function.as_str()).await?),
-        input: IncValue::from_str(&unwrap_value(root, inc.input.as_str()).await?),
-        input1: IncValue::from_str(&unwrap_value(root, inc.input1.as_str()).await?),
-    };
-    Ok(inc)
-}
-
-fn find_close_quotation(path: &str) -> usize {
-    let pos = path.find('\'').unwrap();
-    if pos == 0 {
-        return 0;
-    }
-    if &path[pos - 1..pos] == "\\" {
-        return pos + 1 + find_close_quotation(&path[pos + 1..]);
-    }
-    pos
-}
-
-fn find_arrrow_in_block(path: &str, pos: usize) -> usize {
-    let a_pos = find_arrrow_in_pure(&path[0..pos]);
-    if a_pos < pos {
-        return a_pos;
-    }
-    let c_pos = pos + 1 + find_close_quotation(&path[pos + 1..]);
-    c_pos + 1 + find_arrrow(&path[c_pos + 1..])
-}
-
-fn find_arrrow_in_pure(path: &str) -> usize {
-    let p = path.find("->");
-    let q = path.find("<-");
-    if p.is_none() && q.is_none() {
-        path.len()
-    } else {
-        if p.is_some() && q.is_some() {
-            let p = p.unwrap();
-            let q = q.unwrap();
-            std::cmp::min(p, q)
-        } else if p.is_some() {
-            p.unwrap()
-        } else {
-            q.unwrap()
-        }
-    }
-}
-
-fn find_arrrow(path: &str) -> usize {
-    if let Some(pos) = path.find('\'') {
-        return find_arrrow_in_block(path, pos);
-    }
-    find_arrrow_in_pure(path)
-}
-
-async fn invoke_inc_v(
-    dm: &mut Box<dyn AsDataManager>,
-    root: &str,
-    inc_v: &Vec<Inc>,
-) -> io::Result<Vec<String>> {
-    log::debug!("inc_v.len(): {}", inc_v.len());
-    for inc in inc_v {
-        let inc = unwrap_inc(dm, &root, inc).await?;
-        invoke_inc(dm, &inc).await?;
-    }
-    dm.get(&Path::from_str(&format!("{root}->$output"))).await
-}
-
 fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
     for (k, v) in s_tree.entries_mut() {
         if v.is_array() {
@@ -261,38 +37,6 @@ fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
             merge(&mut p_tree[k], v);
         }
     }
-}
-
-#[async_recursion::async_recursion]
-async fn execute(
-    dm: &mut Box<dyn AsDataManager>,
-    input: &str,
-    script_tree: &ScriptTree,
-    out_tree: &mut json::JsonValue,
-) -> io::Result<()> {
-    let root = gen_root();
-    dm.append(
-        &Path::from_str(&format!("{root}->$input")),
-        vec![input.to_string()],
-    )
-    .await?;
-    let inc_v = parse_script(&script_tree.script)?;
-    let rs = invoke_inc_v(dm, &root, &inc_v).await?;
-    if script_tree.next_v.is_empty() {
-        let _ = out_tree.insert(&script_tree.name, rs);
-        return Ok(());
-    }
-    let mut cur = json::object! {};
-    for next_tree in &script_tree.next_v {
-        // fork
-        for input in &rs {
-            let mut sub_out_tree = json::object! {};
-            execute(dm, input, next_tree, &mut sub_out_tree).await?;
-            merge(&mut cur, &mut sub_out_tree);
-        }
-    }
-    let _ = out_tree.insert(&script_tree.name, cur);
-    Ok(())
 }
 
 fn split_line(line: &str) -> Vec<String> {
@@ -344,15 +88,6 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
     Ok(inc_v)
 }
 
-#[derive(Clone, Debug)]
-struct Inc {
-    pub output: IncValue,
-    pub operator: IncValue,
-    pub function: IncValue,
-    pub input: IncValue,
-    pub input1: IncValue,
-}
-
 fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
     let mut value = json::object! {};
     for next_item in &script_tree.next_v {
@@ -363,6 +98,21 @@ fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
 }
 
 // Public
+pub mod data;
+pub mod err;
+pub mod func;
+pub mod mem_table;
+pub mod util;
+
+#[derive(Clone, Debug)]
+pub struct Inc {
+    pub output: IncValue,
+    pub operator: IncValue,
+    pub function: IncValue,
+    pub input: IncValue,
+    pub input1: IncValue,
+}
+
 pub enum PathType {
     Pure,
     Temp,
@@ -403,7 +153,7 @@ impl Path {
                 step_v: Vec::new(),
             };
         }
-        let mut s = find_arrrow(path);
+        let mut s = Self::find_arrrow(path);
 
         let root = path[0..s].to_string();
         if s == path.len() {
@@ -415,7 +165,7 @@ impl Path {
         let mut tail = &path[s..];
         let mut step_v = Vec::new();
         loop {
-            s = find_arrrow(&tail[2..]) + 2;
+            s = Self::find_arrrow(&tail[2..]) + 2;
             step_v.push(Step {
                 arrow: tail[0..2].to_string(),
                 code: tail[2..s].to_string(),
@@ -496,6 +246,51 @@ impl Path {
             })
         }
     }
+
+    fn find_close_quotation(path: &str) -> usize {
+        let pos = path.find('\'').unwrap();
+        if pos == 0 {
+            return 0;
+        }
+        if &path[pos - 1..pos] == "\\" {
+            return pos + 1 + Self::find_close_quotation(&path[pos + 1..]);
+        }
+        pos
+    }
+
+    fn find_arrrow_in_block(path: &str, pos: usize) -> usize {
+        let a_pos = Self::find_arrrow_in_pure(&path[0..pos]);
+        if a_pos < pos {
+            return a_pos;
+        }
+        let c_pos = pos + 1 + Self::find_close_quotation(&path[pos + 1..]);
+        c_pos + 1 + Self::find_arrrow(&path[c_pos + 1..])
+    }
+
+    fn find_arrrow_in_pure(path: &str) -> usize {
+        let p = path.find("->");
+        let q = path.find("<-");
+        if p.is_none() && q.is_none() {
+            path.len()
+        } else {
+            if p.is_some() && q.is_some() {
+                let p = p.unwrap();
+                let q = q.unwrap();
+                std::cmp::min(p, q)
+            } else if p.is_some() {
+                p.unwrap()
+            } else {
+                q.unwrap()
+            }
+        }
+    }
+
+    fn find_arrrow(path: &str) -> usize {
+        if let Some(pos) = path.find('\'') {
+            return Self::find_arrrow_in_block(path, pos);
+        }
+        Self::find_arrrow_in_pure(path)
+    }
 }
 
 impl Display for Path {
@@ -547,10 +342,6 @@ impl IncValue {
     }
 }
 
-pub mod data;
-pub mod err;
-pub mod mem_table;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScriptTree {
     pub script: String,
@@ -573,15 +364,51 @@ pub trait AsEdgeEngine {
     ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
 
     fn commit(&mut self) -> impl std::future::Future<Output = io::Result<()>> + Send;
+
+    fn set_func(
+        &mut self,
+        name: &str,
+        func_op: Option<Box<dyn func::AsFunc>>,
+    ) -> impl std::future::Future<Output = io::Result<()>> + Send;
 }
 
 pub struct EdgeEngine {
-    dm: Box<dyn AsDataManager>,
+    dm: Arc<dyn AsDataManager>,
+    func_mp: HashMap<String, Box<dyn func::AsFunc>>,
 }
 
 impl EdgeEngine {
-    pub fn new(dm: Box<dyn AsDataManager>) -> Self {
-        Self { dm }
+    pub fn new(dm: Arc<dyn AsDataManager>) -> Self {
+        let mut func_mp: HashMap<String, Box<dyn func::AsFunc>> = HashMap::new();
+        func_mp.insert("new".to_string(), Box::new(func::new));
+        func_mp.insert("line".to_string(), Box::new(func::line));
+        func_mp.insert("rand".to_string(), Box::new(func::rand));
+        //
+        func_mp.insert("append".to_string(), Box::new(func::append));
+        func_mp.insert("distinct".to_string(), Box::new(func::distinct));
+        func_mp.insert("left".to_string(), Box::new(func::left));
+        func_mp.insert("inner".to_string(), Box::new(func::inner));
+        func_mp.insert("if".to_string(), Box::new(func::if_));
+        //
+        func_mp.insert("+".to_string(), Box::new(func::add));
+        func_mp.insert("-".to_string(), Box::new(func::minus));
+        func_mp.insert("*".to_string(), Box::new(func::mul));
+        func_mp.insert("/".to_string(), Box::new(func::div));
+        func_mp.insert("%".to_string(), Box::new(func::rest));
+        //
+        func_mp.insert("==".to_string(), Box::new(func::equal));
+        func_mp.insert("!=".to_string(), Box::new(func::not_equal));
+        func_mp.insert(">".to_string(), Box::new(func::greater));
+        func_mp.insert("<".to_string(), Box::new(func::smaller));
+        //
+        func_mp.insert("divide".to_string(), Box::new(func::divide));
+        func_mp.insert("agent".to_string(), Box::new(func::agent));
+        //
+        func_mp.insert("count".to_string(), Box::new(func::count));
+        func_mp.insert("sum".to_string(), Box::new(func::sum));
+        //
+        func_mp.insert("=".to_string(), Box::new(func::set));
+        Self { dm, func_mp }
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
@@ -610,6 +437,196 @@ impl EdgeEngine {
         let _ = json.insert(&script, value);
         json
     }
+
+    async fn dump_inc_v(dm: Arc<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
+        let output_v = dm
+            .get(&Path::from_str(&format!("{function}->inc->output")))
+            .await?;
+        let operator_v = dm
+            .get(&Path::from_str(&format!("{function}->inc->operator")))
+            .await?;
+        let function_v = dm
+            .get(&Path::from_str(&format!("{function}->inc->function")))
+            .await?;
+        let input_v = dm
+            .get(&Path::from_str(&format!("{function}->inc->input")))
+            .await?;
+        let input1_v = dm
+            .get(&Path::from_str(&format!("{function}->inc->input1")))
+            .await?;
+        let mut inc_v = Vec::with_capacity(output_v.len());
+        for i in 0..output_v.len() {
+            inc_v.push(Inc {
+                output: IncValue::from_string(util::escape_word(&output_v[i])),
+                operator: IncValue::from_string(util::escape_word(&operator_v[i])),
+                function: IncValue::from_string(util::escape_word(&function_v[i])),
+                input: IncValue::from_string(util::escape_word(&input_v[i])),
+                input1: IncValue::from_string(util::escape_word(&input1_v[i])),
+            });
+        }
+        Ok(inc_v)
+    }
+
+    async fn get_one(dm: Arc<dyn AsDataManager>, root: &str, id: &str) -> io::Result<String> {
+        let path = unwrap_value(root, id).await?;
+        let id_v = dm.get(&Path::from_str(&path)).await?;
+        if id_v.len() != 1 {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "need 1 but not"));
+        }
+        Ok(id_v[0].clone())
+    }
+
+    async fn unwrap_inc(dm: Arc<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<Inc> {
+        let inc = Inc {
+            output: IncValue::from_str(&unwrap_value(root, inc.output.as_str()).await?),
+            operator: IncValue::from_str(
+                &Self::get_one(dm.clone(), root, inc.operator.as_str()).await?,
+            ),
+            function: IncValue::from_str(
+                &Self::get_one(dm.clone(), root, inc.function.as_str()).await?,
+            ),
+            input: IncValue::from_str(&unwrap_value(root, inc.input.as_str()).await?),
+            input1: IncValue::from_str(&unwrap_value(root, inc.input1.as_str()).await?),
+        };
+        Ok(inc)
+    }
+
+    async fn invoke_inc_v(
+        dm: Arc<dyn AsDataManager>,
+        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
+        root: &str,
+        inc_v: &Vec<Inc>,
+    ) -> io::Result<Vec<String>> {
+        log::debug!("inc_v.len(): {}", inc_v.len());
+        for inc in inc_v {
+            let inc = Self::unwrap_inc(dm.clone(), &root, inc).await?;
+            Self::invoke_inc(dm.clone(), func_mp, &inc).await?;
+        }
+        dm.get(&Path::from_str(&format!("{root}->$output"))).await
+    }
+
+    #[async_recursion::async_recursion]
+    async fn execute(
+        dm: Arc<dyn AsDataManager>,
+        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
+        input: &str,
+        script_tree: &ScriptTree,
+        out_tree: &mut json::JsonValue,
+    ) -> io::Result<()> {
+        let root = gen_root();
+        dm.append(
+            &Path::from_str(&format!("{root}->$input")),
+            vec![input.to_string()],
+        )
+        .await?;
+        let inc_v = parse_script(&script_tree.script)?;
+        let rs = Self::invoke_inc_v(dm.clone(), func_mp, &root, &inc_v).await?;
+        if script_tree.next_v.is_empty() {
+            let _ = out_tree.insert(&script_tree.name, rs);
+            return Ok(());
+        }
+        let mut cur = json::object! {};
+        for next_tree in &script_tree.next_v {
+            // fork
+            for input in &rs {
+                let mut sub_out_tree = json::object! {};
+                Self::execute(dm.clone(), func_mp, input, next_tree, &mut sub_out_tree).await?;
+                merge(&mut cur, &mut sub_out_tree);
+            }
+        }
+        let _ = out_tree.insert(&script_tree.name, cur);
+        Ok(())
+    }
+
+    #[async_recursion::async_recursion]
+    async fn invoke_inc(
+        dm: Arc<dyn AsDataManager>,
+        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
+        inc: &Inc,
+    ) -> io::Result<()> {
+        log::debug!("invoke_inc: {:?}", inc);
+        let path = Path::from_str(inc.output.as_str());
+        if path.step_v.is_empty() {
+            return Ok(());
+        }
+        let input_item_v = dm.get(&Path::from_str(inc.input.as_str())).await?;
+        let input1_item_v = dm.get(&Path::from_str(inc.input1.as_str())).await?;
+        let rs = match func_mp.get(inc.function.as_str()) {
+            Some(func) => func.invoke(dm.clone(), input_item_v, input1_item_v).await?,
+            None => {
+                if inc.function.as_str() == "$func" {
+                    let mut rs = Vec::with_capacity(func_mp.len());
+                    for (name, _) in func_mp {
+                        rs.push(name.clone());
+                    }
+                    rs
+                } else {
+                    let inc_v = Self::dump_inc_v(dm.clone(), inc.function.as_str()).await?;
+                    let new_root = gen_root();
+                    dm.set(
+                        &Path::from_str(&format!("{new_root}->$input")),
+                        input_item_v,
+                    )
+                    .await?;
+                    dm.set(
+                        &Path::from_str(&format!("{new_root}->$input1")),
+                        input1_item_v,
+                    )
+                    .await?;
+                    log::debug!("inc_v.len(): {}", inc_v.len());
+                    Self::invoke_inc_v(dm.clone(), func_mp, &new_root, &inc_v).await?;
+                    dm.get(&Path::from_str(&format!("{new_root}->$output")))
+                        .await?
+                }
+            }
+        };
+        if inc.operator.as_str() == "=" {
+            dm.set(&path, rs).await?;
+        } else {
+            dm.append(&path, rs).await?;
+        }
+        if path.is_temp() {
+            return Ok(());
+        }
+        Self::on_asigned(dm, func_mp, &path.step_v.last().unwrap().code).await
+    }
+
+    #[async_recursion::async_recursion]
+    async fn on_asigned(
+        dm: Arc<dyn AsDataManager>,
+        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
+        code: &str,
+    ) -> io::Result<()> {
+        let listener_v = dm
+            .get(&Path::from_str(&format!("{code}->listener")))
+            .await?;
+        for listener in &listener_v {
+            let target_v = dm
+                .get(&Path::from_str(&format!("{listener}->target")))
+                .await?;
+            if target_v.is_empty() {
+                continue;
+            }
+            let target = util::escape_word(&target_v[0]);
+            let inc_v = Self::dump_inc_v(dm.clone(), listener)
+                .await?
+                .into_iter()
+                .map(|mut inc| {
+                    *inc.output.as_mut() = inc.output.as_str().replace("$->$output", &target);
+                    inc
+                })
+                .collect::<Vec<Inc>>();
+            let new_root = gen_root();
+            dm.set(
+                &Path::from_str(&format!("{new_root}->$input")),
+                vec![code.to_string()],
+            )
+            .await?;
+            Self::invoke_inc_v(dm.clone(), func_mp, &new_root, &inc_v).await?;
+        }
+
+        Ok(())
+    }
 }
 
 impl AsEdgeEngine for EdgeEngine {
@@ -621,17 +638,38 @@ impl AsEdgeEngine for EdgeEngine {
 
     async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        execute(&mut self.dm, "", &script_tree, &mut out_tree).await?;
+        Self::execute(
+            self.dm.clone(),
+            &self.func_mp,
+            "",
+            &script_tree,
+            &mut out_tree,
+        )
+        .await?;
         Ok(out_tree)
     }
 
     async fn commit(&mut self) -> io::Result<()> {
         self.dm.commit().await
     }
+
+    async fn set_func(
+        &mut self,
+        name: &str,
+        func_op: Option<Box<dyn func::AsFunc>>,
+    ) -> io::Result<()> {
+        match func_op {
+            Some(func) => self.func_mp.insert(name.to_string(), func),
+            None => self.func_mp.remove(name),
+        };
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::{
         data::{MemDataManager, RecDataManager},
         ScriptTree,
@@ -642,8 +680,8 @@ mod tests {
     #[test]
     fn test() {
         let task = async {
-            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
-            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
                     script: [
@@ -676,8 +714,8 @@ mod tests {
     #[test]
     fn test_if() {
         let task = async {
-            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
-            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
                     script: [
@@ -703,8 +741,8 @@ mod tests {
     #[test]
     fn test_space() {
         let task = async {
-            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
-            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
                     script: ["$->$output = = '1 ' _"].join("\n"),
@@ -725,9 +763,9 @@ mod tests {
     #[test]
     fn test_cache() {
         let task = async {
-            let dm = RecDataManager::new(Box::new(MemDataManager::new()));
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
 
-            let mut edge_engine = EdgeEngine::new(Box::new(dm));
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
             edge_engine
                 .execute1(&ScriptTree {
                     script: ["root->name = = edge _"].join("\n"),

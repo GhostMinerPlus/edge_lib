@@ -6,31 +6,31 @@ use crate::{mem_table, Path, PathPart};
 
 // Public
 pub trait AsDataManager: Send + Sync {
-    fn divide(&self) -> Box<dyn AsDataManager>;
+    fn divide(&self) -> Arc<dyn AsDataManager>;
 
     /// Get all targets from `source->code`
     fn append(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 
     /// Get all targets from `source->code`
     fn set(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 
     /// Get all targets from `source->code`
     fn get(
-        &mut self,
+        &self,
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
 
-    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
+    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 
-    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
+    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 }
 
 #[derive(Clone)]
@@ -47,11 +47,11 @@ impl MemDataManager {
 }
 
 impl AsDataManager for MemDataManager {
-    fn divide(&self) -> Box<dyn AsDataManager> {
-        Box::new(self.clone())
+    fn divide(&self) -> Arc<dyn AsDataManager> {
+        Arc::new(self.clone())
     }
 
-    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         let this = self.clone();
         Box::pin(async move {
             let mut mem_table = this.mem_table.lock().await;
@@ -60,19 +60,19 @@ impl AsDataManager for MemDataManager {
         })
     }
 
-    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         Box::pin(future::ready(Ok(())))
     }
 
     fn append(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mut mdm = self.clone();
+        let mdm = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
@@ -88,14 +88,14 @@ impl AsDataManager for MemDataManager {
     }
 
     fn set(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mut mdm = self.clone();
+        let mdm = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
@@ -114,7 +114,7 @@ impl AsDataManager for MemDataManager {
     }
 
     fn get(
-        &mut self,
+        &self,
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
@@ -151,12 +151,12 @@ impl AsDataManager for MemDataManager {
 
 #[derive(Clone)]
 struct UnitDataManager {
-    global: Arc<Mutex<Box<dyn AsDataManager>>>,
+    global: Arc<Mutex<Arc<dyn AsDataManager>>>,
     temp: Arc<Mutex<MemDataManager>>,
 }
 
 impl UnitDataManager {
-    fn new(global: Box<dyn AsDataManager>) -> Self {
+    fn new(global: Arc<dyn AsDataManager>) -> Self {
         Self {
             global: Arc::new(Mutex::new(global)),
             temp: Arc::new(Mutex::new(MemDataManager::new())),
@@ -165,12 +165,12 @@ impl UnitDataManager {
 }
 
 impl AsDataManager for UnitDataManager {
-    fn divide(&self) -> Box<dyn AsDataManager> {
-        Box::new(self.clone())
+    fn divide(&self) -> Arc<dyn AsDataManager> {
+        Arc::new(self.clone())
     }
 
     fn append(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
@@ -180,13 +180,13 @@ impl AsDataManager for UnitDataManager {
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
         }
-        let mut this = self.clone();
+        let this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let mut temp = this.temp.lock().await;
+                let temp = this.temp.lock().await;
                 for root in &root_v {
                     temp.append(
                         &Path {
@@ -200,7 +200,7 @@ impl AsDataManager for UnitDataManager {
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let mut global = this.global.lock().await;
+                let global = this.global.lock().await;
                 for root in &root_v {
                     global
                         .append(
@@ -218,7 +218,7 @@ impl AsDataManager for UnitDataManager {
     }
 
     fn set(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
@@ -228,13 +228,13 @@ impl AsDataManager for UnitDataManager {
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
         }
-        let mut this = self.clone();
+        let this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let mut temp = this.temp.lock().await;
+                let temp = this.temp.lock().await;
                 for root in &root_v {
                     temp.set(
                         &Path {
@@ -248,7 +248,7 @@ impl AsDataManager for UnitDataManager {
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let mut global = this.global.lock().await;
+                let global = this.global.lock().await;
                 for root in &root_v {
                     global
                         .set(
@@ -266,7 +266,7 @@ impl AsDataManager for UnitDataManager {
     }
 
     fn get(
-        &mut self,
+        &self,
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
@@ -275,12 +275,12 @@ impl AsDataManager for UnitDataManager {
             }
             return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
-        let mut this = self.clone();
+        let this = self.clone();
         let path = path.clone();
         Box::pin(async move {
             match path.first_part() {
                 PathPart::Pure(part_path) => {
-                    let mut global = this.global.lock().await;
+                    let global = this.global.lock().await;
                     let item_v = global.get(&part_path).await?;
                     drop(global);
 
@@ -298,7 +298,7 @@ impl AsDataManager for UnitDataManager {
                     Ok(rs)
                 }
                 PathPart::Temp(part_path) => {
-                    let mut temp = this.temp.lock().await;
+                    let temp = this.temp.lock().await;
                     let item_v = temp.get(&part_path).await?;
                     drop(temp);
 
@@ -316,12 +316,12 @@ impl AsDataManager for UnitDataManager {
                     Ok(rs)
                 }
                 PathPart::EntirePure => {
-                    let mut global = this.global.lock().await;
+                    let global = this.global.lock().await;
                     let item_v = global.get(&path).await?;
                     Ok(item_v)
                 }
                 PathPart::EntireTemp => {
-                    let mut temp = this.temp.lock().await;
+                    let temp = this.temp.lock().await;
                     let item_v = temp.get(&path).await?;
                     Ok(item_v)
                 }
@@ -329,18 +329,18 @@ impl AsDataManager for UnitDataManager {
         })
     }
 
-    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         let this = self.clone();
         Box::pin(async move {
-            let mut temp = this.temp.lock().await;
+            let temp = this.temp.lock().await;
             temp.clear().await?;
             drop(temp);
-            let mut global = this.global.lock().await;
+            let global = this.global.lock().await;
             global.clear().await
         })
     }
 
-    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         Box::pin(future::ready(Ok(())))
     }
 }
@@ -358,7 +358,7 @@ pub struct RecDataManager {
 }
 
 impl RecDataManager {
-    pub fn new(global: Box<dyn AsDataManager>) -> Self {
+    pub fn new(global: Arc<dyn AsDataManager>) -> Self {
         Self {
             global: Arc::new(Mutex::new(UnitDataManager::new(global))),
             cache: Arc::new(Mutex::new(HashMap::new())),
@@ -525,25 +525,25 @@ impl RecDataManager {
 }
 
 impl AsDataManager for RecDataManager {
-    fn divide(&self) -> Box<dyn AsDataManager> {
-        Box::new(Self {
+    fn divide(&self) -> Arc<dyn AsDataManager> {
+        Arc::new(Self {
             global: self.global.clone(),
             cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    fn clear(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         let this = self.clone();
         Box::pin(async move {
             let mut cache = this.cache.lock().await;
             cache.clear();
             drop(cache);
-            let mut global = this.global.lock().await;
+            let global = this.global.lock().await;
             global.clear().await
         })
     }
 
-    fn commit(&mut self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         let this = self.clone();
         Box::pin(async move {
             let mut cache = this.cache.lock().await;
@@ -573,7 +573,7 @@ impl AsDataManager for RecDataManager {
     }
 
     fn append(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
@@ -610,7 +610,7 @@ impl AsDataManager for RecDataManager {
     }
 
     fn set(
-        &mut self,
+        &self,
         path: &Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
@@ -635,7 +635,7 @@ impl AsDataManager for RecDataManager {
     }
 
     fn get(
-        &mut self,
+        &self,
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
