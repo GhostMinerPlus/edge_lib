@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Display, io, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    io,
+    sync::{Arc, Mutex},
+};
+use tokio::sync::RwLock;
 
 use crate::data::AsDataManager;
 
@@ -364,51 +370,56 @@ pub trait AsEdgeEngine {
     ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
 
     fn commit(&mut self) -> impl std::future::Future<Output = io::Result<()>> + Send;
-
-    fn set_func(
-        &mut self,
-        name: &str,
-        func_op: Option<Box<dyn func::AsFunc>>,
-    ) -> impl std::future::Future<Output = io::Result<()>> + Send;
 }
+
+static mut EDGE_ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> = None;
+static mut EDGE_ENGINE_FUNC_MAP_OP_LOCK: Mutex<()> = Mutex::new(());
 
 pub struct EdgeEngine {
     dm: Arc<dyn AsDataManager>,
-    func_mp: HashMap<String, Box<dyn func::AsFunc>>,
 }
 
 impl EdgeEngine {
     pub fn new(dm: Arc<dyn AsDataManager>) -> Self {
-        let mut func_mp: HashMap<String, Box<dyn func::AsFunc>> = HashMap::new();
-        func_mp.insert("new".to_string(), Box::new(func::new));
-        func_mp.insert("line".to_string(), Box::new(func::line));
-        func_mp.insert("rand".to_string(), Box::new(func::rand));
-        //
-        func_mp.insert("append".to_string(), Box::new(func::append));
-        func_mp.insert("distinct".to_string(), Box::new(func::distinct));
-        func_mp.insert("left".to_string(), Box::new(func::left));
-        func_mp.insert("inner".to_string(), Box::new(func::inner));
-        func_mp.insert("if".to_string(), Box::new(func::if_));
-        //
-        func_mp.insert("+".to_string(), Box::new(func::add));
-        func_mp.insert("-".to_string(), Box::new(func::minus));
-        func_mp.insert("*".to_string(), Box::new(func::mul));
-        func_mp.insert("/".to_string(), Box::new(func::div));
-        func_mp.insert("%".to_string(), Box::new(func::rest));
-        //
-        func_mp.insert("==".to_string(), Box::new(func::equal));
-        func_mp.insert("!=".to_string(), Box::new(func::not_equal));
-        func_mp.insert(">".to_string(), Box::new(func::greater));
-        func_mp.insert("<".to_string(), Box::new(func::smaller));
-        //
-        func_mp.insert("divide".to_string(), Box::new(func::divide));
-        func_mp.insert("agent".to_string(), Box::new(func::agent));
-        //
-        func_mp.insert("count".to_string(), Box::new(func::count));
-        func_mp.insert("sum".to_string(), Box::new(func::sum));
-        //
-        func_mp.insert("=".to_string(), Box::new(func::set));
-        Self { dm, func_mp }
+        Self::lazy_mp();
+        Self { dm }
+    }
+
+    fn lazy_mp() {
+        let lk = unsafe { EDGE_ENGINE_FUNC_MAP_OP_LOCK.lock().unwrap() };
+        if unsafe { EDGE_ENGINE_FUNC_MAP_OP.is_none() } {
+            let mut func_mp: HashMap<String, Box<dyn func::AsFunc>> = HashMap::new();
+            func_mp.insert("new".to_string(), Box::new(func::new));
+            func_mp.insert("line".to_string(), Box::new(func::line));
+            func_mp.insert("rand".to_string(), Box::new(func::rand));
+            //
+            func_mp.insert("append".to_string(), Box::new(func::append));
+            func_mp.insert("distinct".to_string(), Box::new(func::distinct));
+            func_mp.insert("left".to_string(), Box::new(func::left));
+            func_mp.insert("inner".to_string(), Box::new(func::inner));
+            func_mp.insert("if".to_string(), Box::new(func::if_));
+            //
+            func_mp.insert("+".to_string(), Box::new(func::add));
+            func_mp.insert("-".to_string(), Box::new(func::minus));
+            func_mp.insert("*".to_string(), Box::new(func::mul));
+            func_mp.insert("/".to_string(), Box::new(func::div));
+            func_mp.insert("%".to_string(), Box::new(func::rest));
+            //
+            func_mp.insert("==".to_string(), Box::new(func::equal));
+            func_mp.insert("!=".to_string(), Box::new(func::not_equal));
+            func_mp.insert(">".to_string(), Box::new(func::greater));
+            func_mp.insert("<".to_string(), Box::new(func::smaller));
+            //
+            func_mp.insert("divide".to_string(), Box::new(func::divide));
+            func_mp.insert("agent".to_string(), Box::new(func::agent));
+            //
+            func_mp.insert("count".to_string(), Box::new(func::count));
+            func_mp.insert("sum".to_string(), Box::new(func::sum));
+            //
+            func_mp.insert("=".to_string(), Box::new(func::set));
+            unsafe { EDGE_ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
+        }
+        drop(lk);
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
@@ -436,6 +447,15 @@ impl EdgeEngine {
         let mut json = json::object! {};
         let _ = json.insert(&script, value);
         json
+    }
+
+    pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
+        Self::lazy_mp();
+        let mut w_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().write() }.await;
+        match func_op {
+            Some(func) => w_mp.insert(name.to_string(), func),
+            None => w_mp.remove(name),
+        };
     }
 
     async fn dump_inc_v(dm: Arc<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
@@ -493,14 +513,13 @@ impl EdgeEngine {
 
     async fn invoke_inc_v(
         dm: Arc<dyn AsDataManager>,
-        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
         root: &str,
         inc_v: &Vec<Inc>,
     ) -> io::Result<Vec<String>> {
         log::debug!("inc_v.len(): {}", inc_v.len());
         for inc in inc_v {
             let inc = Self::unwrap_inc(dm.clone(), &root, inc).await?;
-            Self::invoke_inc(dm.clone(), func_mp, &inc).await?;
+            Self::invoke_inc(dm.clone(), &inc).await?;
         }
         dm.get(&Path::from_str(&format!("{root}->$output"))).await
     }
@@ -508,7 +527,6 @@ impl EdgeEngine {
     #[async_recursion::async_recursion]
     async fn execute(
         dm: Arc<dyn AsDataManager>,
-        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
         input: &str,
         script_tree: &ScriptTree,
         out_tree: &mut json::JsonValue,
@@ -520,7 +538,7 @@ impl EdgeEngine {
         )
         .await?;
         let inc_v = parse_script(&script_tree.script)?;
-        let rs = Self::invoke_inc_v(dm.clone(), func_mp, &root, &inc_v).await?;
+        let rs = Self::invoke_inc_v(dm.clone(), &root, &inc_v).await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -530,7 +548,7 @@ impl EdgeEngine {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                Self::execute(dm.clone(), func_mp, input, next_tree, &mut sub_out_tree).await?;
+                Self::execute(dm.clone(), input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -539,11 +557,7 @@ impl EdgeEngine {
     }
 
     #[async_recursion::async_recursion]
-    async fn invoke_inc(
-        dm: Arc<dyn AsDataManager>,
-        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
-        inc: &Inc,
-    ) -> io::Result<()> {
+    async fn invoke_inc(dm: Arc<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
         log::debug!("invoke_inc: {:?}", inc);
         let path = Path::from_str(inc.output.as_str());
         if path.step_v.is_empty() {
@@ -551,12 +565,13 @@ impl EdgeEngine {
         }
         let input_item_v = dm.get(&Path::from_str(inc.input.as_str())).await?;
         let input1_item_v = dm.get(&Path::from_str(inc.input1.as_str())).await?;
+        let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
         let rs = match func_mp.get(inc.function.as_str()) {
             Some(func) => func.invoke(dm.clone(), input_item_v, input1_item_v).await?,
             None => {
                 if inc.function.as_str() == "$func" {
                     let mut rs = Vec::with_capacity(func_mp.len());
-                    for (name, _) in func_mp {
+                    for (name, _) in &*func_mp {
                         rs.push(name.clone());
                     }
                     rs
@@ -574,7 +589,7 @@ impl EdgeEngine {
                     )
                     .await?;
                     log::debug!("inc_v.len(): {}", inc_v.len());
-                    Self::invoke_inc_v(dm.clone(), func_mp, &new_root, &inc_v).await?;
+                    Self::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
                     dm.get(&Path::from_str(&format!("{new_root}->$output")))
                         .await?
                 }
@@ -588,15 +603,11 @@ impl EdgeEngine {
         if path.is_temp() {
             return Ok(());
         }
-        Self::on_asigned(dm, func_mp, &path.step_v.last().unwrap().code).await
+        Self::on_asigned(dm, &path.step_v.last().unwrap().code).await
     }
 
     #[async_recursion::async_recursion]
-    async fn on_asigned(
-        dm: Arc<dyn AsDataManager>,
-        func_mp: &HashMap<String, Box<dyn func::AsFunc>>,
-        code: &str,
-    ) -> io::Result<()> {
+    async fn on_asigned(dm: Arc<dyn AsDataManager>, code: &str) -> io::Result<()> {
         let listener_v = dm
             .get(&Path::from_str(&format!("{code}->listener")))
             .await?;
@@ -622,7 +633,7 @@ impl EdgeEngine {
                 vec![code.to_string()],
             )
             .await?;
-            Self::invoke_inc_v(dm.clone(), func_mp, &new_root, &inc_v).await?;
+            Self::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
         }
 
         Ok(())
@@ -638,31 +649,12 @@ impl AsEdgeEngine for EdgeEngine {
 
     async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        Self::execute(
-            self.dm.clone(),
-            &self.func_mp,
-            "",
-            &script_tree,
-            &mut out_tree,
-        )
-        .await?;
+        Self::execute(self.dm.clone(), "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
     }
 
     async fn commit(&mut self) -> io::Result<()> {
         self.dm.commit().await
-    }
-
-    async fn set_func(
-        &mut self,
-        name: &str,
-        func_op: Option<Box<dyn func::AsFunc>>,
-    ) -> io::Result<()> {
-        match func_op {
-            Some(func) => self.func_mp.insert(name.to_string(), func),
-            None => self.func_mp.remove(name),
-        };
-        Ok(())
     }
 }
 
@@ -672,7 +664,7 @@ mod tests {
 
     use crate::{
         data::{MemDataManager, RecDataManager},
-        ScriptTree,
+        ScriptTree, EDGE_ENGINE_FUNC_MAP_OP,
     };
 
     use super::{AsEdgeEngine, EdgeEngine};
@@ -787,6 +779,31 @@ mod tests {
             edge_engine.commit().await.unwrap();
 
             assert!(rs["result"].len() == 2);
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
+
+    #[test]
+    fn test_func() {
+        let task = async {
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+            let r_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read() }.await;
+            let sz = r_mp.len();
+            drop(r_mp);
+            let rs = edge_engine
+                .execute1(&ScriptTree {
+                    script: ["$->$output = $func _ _"].join("\n"),
+                    name: "result".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            assert_eq!(rs["result"].len(), sz);
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
