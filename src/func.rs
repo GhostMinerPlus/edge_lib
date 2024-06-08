@@ -401,19 +401,3 @@ pub fn sum(
         Ok(output_item_v)
     }
 }
-
-pub fn divide(
-    _: Arc<dyn AsDataManager>,
-    _: Vec<String>,
-    _: Vec<String>,
-) -> impl std::future::Future<Output = io::Result<Vec<String>>> + Send {
-    async move { todo!() }
-}
-
-pub fn agent(
-    _: Arc<dyn AsDataManager>,
-    _: Vec<String>,
-    _: Vec<String>,
-) -> impl std::future::Future<Output = io::Result<Vec<String>>> + Send {
-    async move { todo!() }
-}
