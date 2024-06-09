@@ -129,9 +129,9 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
                 });
                 inc_v.push(Inc {
                     output: IncValue::from_str(word_v[0].trim()),
-                    function: IncValue::from_str("contact"),
-                    input: IncValue::from_str("$->$temp"),
-                    input1: IncValue::from_str("_"),
+                    function: IncValue::from_str("append"),
+                    input: IncValue::from_str(word_v[0].trim()),
+                    input1: IncValue::from_str("$->$temp"),
                 });
             } else {
                 return Err(io::Error::other(
@@ -485,15 +485,16 @@ impl EdgeEngine {
     #[async_recursion::async_recursion]
     async fn invoke_inc(&self, inc: &Inc) -> io::Result<()> {
         log::debug!("invoke_inc: {:?}", inc);
-        let path = Path::from_str(inc.output.as_str());
-        if path.step_v.is_empty() {
+        let output = Path::from_str(inc.output.as_str());
+        if output.step_v.is_empty() {
             return Ok(());
         }
-        let output = Path::from_str(inc.output.as_str());
+        let input = Path::from_str(inc.input.as_str());
+        let input1 = Path::from_str(inc.input1.as_str());
         let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
         match func_mp.get(inc.function.as_str()) {
             Some(func) => {
-                func.invoke(self.dm.clone(), output, inc.input.clone(), inc.input1.clone())
+                func.invoke(self.dm.clone(), output.clone(), input, input1)
                     .await?;
             }
             None => {
@@ -504,7 +505,7 @@ impl EdgeEngine {
                     }
                     self.dm.set(&output, rs).await?;
                 } else if inc.function.as_str() == "$resolve" {
-                    let input_item_v = self.dm.get(&Path::from_str(inc.input.as_str())).await?;
+                    let input_item_v = self.dm.get(&input).await?;
                     if input_item_v.is_empty() {
                         return Err(io::Error::other("no input:\n\rwhen $resolve"));
                     }
@@ -515,8 +516,8 @@ impl EdgeEngine {
                     let rs = self.resolve_func(&inc_v, inc.input1.as_str()).await?;
                     self.dm.set(&output, rs).await?;
                 } else {
-                    let input_item_v = self.dm.get(&Path::from_str(inc.input.as_str())).await?;
-                    let input1_item_v = self.dm.get(&Path::from_str(inc.input1.as_str())).await?;
+                    let input_item_v = self.dm.get(&input).await?;
+                    let input1_item_v = self.dm.get(&input1).await?;
                     let inc_v = get_inc_v(self.dm.clone(), inc.function.as_str()).await?;
                     let new_root = gen_root();
                     self.dm
@@ -540,10 +541,10 @@ impl EdgeEngine {
                 }
             }
         }
-        if path.is_temp() {
+        if output.is_temp() {
             return Ok(());
         }
-        self.on_asigned(&path.step_v.last().unwrap().code).await
+        self.on_asigned(&output.step_v.last().unwrap().code).await
     }
 
     #[async_recursion::async_recursion]
@@ -590,7 +591,6 @@ impl EdgeEngine {
             func_mp.insert("line".to_string(), Box::new(func::line));
             func_mp.insert("rand".to_string(), Box::new(func::rand));
             //            
-            func_mp.insert("contact".to_string(), Box::new(func::contact));
             func_mp.insert("append".to_string(), Box::new(func::append));
             func_mp.insert("distinct".to_string(), Box::new(func::distinct));
             func_mp.insert("left".to_string(), Box::new(func::left));

@@ -2,7 +2,7 @@ use std::{cmp::min, collections::HashSet, io, pin::Pin, sync::Arc};
 
 use rand::random;
 
-use crate::{data::AsDataManager, IncValue, Path};
+use crate::{data::AsDataManager, Path};
 
 // Public
 pub trait AsFunc: Send + Sync {
@@ -10,14 +10,14 @@ pub trait AsFunc: Send + Sync {
         &self,
         dm: Arc<dyn AsDataManager>,
         output: Path,
-        input: IncValue,
-        input1: IncValue,
+        input: Path,
+        input1: Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 }
 
 impl<F, R> AsFunc for F
 where
-    F: Fn(Arc<dyn AsDataManager>, Path, IncValue, IncValue) -> R,
+    F: Fn(Arc<dyn AsDataManager>, Path, Path, Path) -> R,
     F: Send + Sync,
     R: std::future::Future<Output = io::Result<()>> + Send + 'static,
 {
@@ -25,8 +25,8 @@ where
         &self,
         dm: Arc<dyn AsDataManager>,
         output: Path,
-        input: IncValue,
-        input1: IncValue,
+        input: Path,
+        input1: Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         Box::pin(self(dm, output, input, input1))
     }
@@ -35,92 +35,96 @@ where
 pub fn append(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let mut input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let mut input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
-        input_item_v.append(&mut input1_item_v);
-        dm.set(&output, input_item_v).await
-    }
-}
-
-pub fn contact(
-    dm: Arc<dyn AsDataManager>,
-    output: Path,
-    input: IncValue,
-    _: IncValue,
-) -> impl std::future::Future<Output = io::Result<()>> + Send {
-    async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        dm.append(&output, input_item_v).await
+        let mut input1_item_v = dm.get(&input1).await?;
+        if output == input {
+            dm.append(&output, input1_item_v).await
+        } else {
+            let mut input_item_v = dm.get(&input).await?;
+            input_item_v.append(&mut input1_item_v);
+            dm.set(&output, input_item_v).await
+        }
     }
 }
 
 pub fn distinct(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    _: IncValue,
+    input: Path,
+    _: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
         let mut set: HashSet<String> = HashSet::new();
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        dm.set(&output, input_item_v
-            .into_iter()
-            .filter(|item| set.insert(item.clone()))
-            .collect()).await
+        let input_item_v = dm.get(&input).await?;
+        dm.set(
+            &output,
+            input_item_v
+                .into_iter()
+                .filter(|item| set.insert(item.clone()))
+                .collect(),
+        )
+        .await
     }
 }
 
 pub fn left(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let mut set = HashSet::new();
         set.extend(input1_item_v);
 
-        dm.set(&output, input_item_v
-            .into_iter()
-            .filter(|item| !set.contains(item))
-            .collect()).await
+        dm.set(
+            &output,
+            input_item_v
+                .into_iter()
+                .filter(|item| !set.contains(item))
+                .collect(),
+        )
+        .await
     }
 }
 
 pub fn inner(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let mut set = HashSet::new();
         set.extend(input1_item_v);
 
-        dm.set(&output, input_item_v
-            .into_iter()
-            .filter(|item| set.contains(item))
-            .collect()).await
+        dm.set(
+            &output,
+            input_item_v
+                .into_iter()
+                .filter(|item| set.contains(item))
+                .collect(),
+        )
+        .await
     }
 }
 
 pub fn if_(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let rs = if input_item_v.is_empty() {
             input1_item_v
         } else {
@@ -133,11 +137,11 @@ pub fn if_(
 pub fn set(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    _: IncValue,
+    input: Path,
+    _: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
-    async move { 
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
+    async move {
+        let input_item_v = dm.get(&input).await?;
         dm.set(&output, input_item_v).await
     }
 }
@@ -145,12 +149,12 @@ pub fn set(
 pub fn add(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -172,12 +176,12 @@ pub fn add(
 pub fn minus(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -199,12 +203,12 @@ pub fn minus(
 pub fn mul(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -226,12 +230,12 @@ pub fn mul(
 pub fn div(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -253,12 +257,12 @@ pub fn div(
 pub fn rest(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -280,12 +284,12 @@ pub fn rest(
 pub fn equal(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -300,12 +304,12 @@ pub fn equal(
 pub fn not_equal(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -320,12 +324,12 @@ pub fn not_equal(
 pub fn greater(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -348,12 +352,12 @@ pub fn greater(
 pub fn smaller(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         let sz = min(input_item_v.len(), input1_item_v.len());
         let mut output_item_v = Vec::with_capacity(sz);
         for i in 0..sz {
@@ -376,12 +380,12 @@ pub fn smaller(
 pub fn new(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    input1: IncValue,
+    input: Path,
+    input1: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(input1.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
         if min(input_item_v.len(), input1_item_v.len()) != 1 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not"));
         }
@@ -399,11 +403,11 @@ pub fn new(
 pub fn line(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    _: IncValue,
+    input: Path,
+    _: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
         if input_item_v.len() != 1 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not"));
         }
@@ -421,11 +425,11 @@ pub fn line(
 pub fn rand(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    _: IncValue,
+    input: Path,
+    _: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
         if input_item_v.len() != 1 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not"));
         }
@@ -444,11 +448,11 @@ pub fn rand(
 pub fn count(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    _: IncValue,
+    input: Path,
+    _: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
         let mut output_item_v = Vec::new();
         output_item_v.push(input_item_v.len().to_string());
         dm.set(&output, output_item_v).await
@@ -458,11 +462,11 @@ pub fn count(
 pub fn sum(
     dm: Arc<dyn AsDataManager>,
     output: Path,
-    input: IncValue,
-    _: IncValue,
+    input: Path,
+    _: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let input_item_v = dm.get(&Path::from_str(input.as_str())).await?;
+        let input_item_v = dm.get(&input).await?;
         let mut output_item_v = Vec::new();
         let mut r = 0.0;
         for input_item in &input_item_v {
