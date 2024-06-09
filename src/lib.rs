@@ -37,9 +37,6 @@ async fn get_inc_v(dm: Arc<dyn AsDataManager>, function: &str) -> io::Result<Vec
     let output_v = dm
         .get(&Path::from_str(&format!("{function}->inc->output")))
         .await?;
-    let operator_v = dm
-        .get(&Path::from_str(&format!("{function}->inc->operator")))
-        .await?;
     let function_v = dm
         .get(&Path::from_str(&format!("{function}->inc->function")))
         .await?;
@@ -53,7 +50,6 @@ async fn get_inc_v(dm: Arc<dyn AsDataManager>, function: &str) -> io::Result<Vec
     for i in 0..output_v.len() {
         inc_v.push(Inc {
             output: IncValue::from_string(util::escape_word(&output_v[i])),
-            operator: IncValue::from_string(util::escape_word(&operator_v[i])),
             function: IncValue::from_string(util::escape_word(&function_v[i])),
             input: IncValue::from_string(util::escape_word(&input_v[i])),
             input1: IncValue::from_string(util::escape_word(&input1_v[i])),
@@ -111,17 +107,44 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
         }
 
         let word_v = split_line(line);
-        if word_v.len() != 5 {
+        if word_v.len() < 4 {
             return Err(io::Error::other(
-                "when parse_script:\n\tmore than 5 words in a line",
+                "when parse_script:\n\tless than 4 words in a line",
             ));
+        }
+        if word_v.len() == 5 {
+            if word_v[1] == "=" {
+                inc_v.push(Inc {
+                    output: IncValue::from_str(word_v[0].trim()),
+                    function: IncValue::from_str(word_v[2].trim()),
+                    input: IncValue::from_str(word_v[3].trim()),
+                    input1: IncValue::from_str(word_v[4].trim()),
+                });
+            } else if word_v[1] == "+=" {
+                inc_v.push(Inc {
+                    output: IncValue::from_str("$->$temp"),
+                    function: IncValue::from_str(word_v[2].trim()),
+                    input: IncValue::from_str(word_v[3].trim()),
+                    input1: IncValue::from_str(word_v[4].trim()),
+                });
+                inc_v.push(Inc {
+                    output: IncValue::from_str(word_v[0].trim()),
+                    function: IncValue::from_str("contact"),
+                    input: IncValue::from_str("$->$temp"),
+                    input1: IncValue::from_str("_"),
+                });
+            } else {
+                return Err(io::Error::other(
+                    "when parse_script:\n\tunknown operator",
+                ));
+            }
+            continue;
         }
         inc_v.push(Inc {
             output: IncValue::from_str(word_v[0].trim()),
-            operator: IncValue::from_str(word_v[1].trim()),
-            function: IncValue::from_str(word_v[2].trim()),
-            input: IncValue::from_str(word_v[3].trim()),
-            input1: IncValue::from_str(word_v[4].trim()),
+            function: IncValue::from_str(word_v[1].trim()),
+            input: IncValue::from_str(word_v[2].trim()),
+            input1: IncValue::from_str(word_v[3].trim()),
         });
     }
     Ok(inc_v)
@@ -146,7 +169,6 @@ pub mod util;
 #[derive(Clone, Debug)]
 pub struct Inc {
     pub output: IncValue,
-    pub operator: IncValue,
     pub function: IncValue,
     pub input: IncValue,
     pub input1: IncValue,
@@ -408,29 +430,22 @@ impl EdgeEngine {
     async fn unwrap_inc(&self, root: &str, inc: &Inc) -> io::Result<Inc> {
         let inc = Inc {
             output: IncValue::from_str(&unwrap_value(root, inc.output.as_str()).await?),
-            operator: IncValue::from_str(
-                &self.get_one(root, inc.operator.as_str()).await?,
-            ),
-            function: IncValue::from_str(
-                &self.get_one(root, inc.function.as_str()).await?,
-            ),
+            function: IncValue::from_str(&self.get_one(root, inc.function.as_str()).await?),
             input: IncValue::from_str(&unwrap_value(root, inc.input.as_str()).await?),
             input1: IncValue::from_str(&unwrap_value(root, inc.input1.as_str()).await?),
         };
         Ok(inc)
     }
 
-    async fn invoke_inc_v(
-        &self,
-        root: &str,
-        inc_v: &Vec<Inc>,
-    ) -> io::Result<Vec<String>> {
+    async fn invoke_inc_v(&self, root: &str, inc_v: &Vec<Inc>) -> io::Result<Vec<String>> {
         log::debug!("inc_v.len(): {}", inc_v.len());
         for inc in inc_v {
             let inc = self.unwrap_inc(&root, inc).await?;
             self.invoke_inc(&inc).await?;
         }
-        self.dm.get(&Path::from_str(&format!("{root}->$output"))).await
+        self.dm
+            .get(&Path::from_str(&format!("{root}->$output")))
+            .await
     }
 
     #[async_recursion::async_recursion]
@@ -441,11 +456,12 @@ impl EdgeEngine {
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
         let root = gen_root();
-        self.dm.append(
-            &Path::from_str(&format!("{root}->$input")),
-            vec![input.to_string()],
-        )
-        .await?;
+        self.dm
+            .append(
+                &Path::from_str(&format!("{root}->$input")),
+                vec![input.to_string()],
+            )
+            .await?;
         let inc_v = parse_script(&script_tree.script)?;
         let rs = self.invoke_inc_v(&root, &inc_v).await?;
         if script_tree.next_v.is_empty() {
@@ -457,7 +473,8 @@ impl EdgeEngine {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                self.inner_execute(input, next_tree, &mut sub_out_tree).await?;
+                self.inner_execute(input, next_tree, &mut sub_out_tree)
+                    .await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -472,13 +489,12 @@ impl EdgeEngine {
         if path.step_v.is_empty() {
             return Ok(());
         }
-        let input_item_v = self.dm.get(&Path::from_str(inc.input.as_str())).await?;
-        let input1_item_v = self.dm.get(&Path::from_str(inc.input1.as_str())).await?;
+        let output = Path::from_str(inc.output.as_str());
         let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
-        let rs = match func_mp.get(inc.function.as_str()) {
+        match func_mp.get(inc.function.as_str()) {
             Some(func) => {
-                func.invoke(self.dm.clone(), input_item_v, input1_item_v)
-                    .await?
+                func.invoke(self.dm.clone(), output, inc.input.clone(), inc.input1.clone())
+                    .await?;
             }
             None => {
                 if inc.function.as_str() == "$func" {
@@ -486,15 +502,21 @@ impl EdgeEngine {
                     for (name, _) in &*func_mp {
                         rs.push(name.clone());
                     }
-                    rs
+                    self.dm.set(&output, rs).await?;
                 } else if inc.function.as_str() == "$resolve" {
-                    let target = self.get_one("", inc.input.as_str()).await?;
-                    let inc_v = get_inc_v(self.dm.clone(), &target).await?;
+                    let input_item_v = self.dm.get(&Path::from_str(inc.input.as_str())).await?;
+                    if input_item_v.is_empty() {
+                        return Err(io::Error::other("no input:\n\rwhen $resolve"));
+                    }
+                    let inc_v = get_inc_v(self.dm.clone(), &input_item_v[0]).await?;
                     if inc_v.is_empty() {
                         return Err(io::Error::other("empty inc_v"));
                     }
-                    self.resolve_func(&inc_v, "1").await?
+                    let rs = self.resolve_func(&inc_v, inc.input1.as_str()).await?;
+                    self.dm.set(&output, rs).await?;
                 } else {
+                    let input_item_v = self.dm.get(&Path::from_str(inc.input.as_str())).await?;
+                    let input1_item_v = self.dm.get(&Path::from_str(inc.input1.as_str())).await?;
                     let inc_v = get_inc_v(self.dm.clone(), inc.function.as_str()).await?;
                     let new_root = gen_root();
                     self.dm
@@ -511,16 +533,12 @@ impl EdgeEngine {
                         .await?;
                     log::debug!("inc_v.len(): {}", inc_v.len());
                     self.invoke_inc_v(&new_root, &inc_v).await?;
-                    self.dm
+                    let rs = self.dm
                         .get(&Path::from_str(&format!("{new_root}->$output")))
-                        .await?
+                        .await?;
+                    self.dm.set(&output, rs).await?;
                 }
             }
-        };
-        if inc.operator.as_str() == "=" {
-            self.dm.set(&path, rs).await?;
-        } else {
-            self.dm.append(&path, rs).await?;
         }
         if path.is_temp() {
             return Ok(());
@@ -571,7 +589,8 @@ impl EdgeEngine {
             func_mp.insert("new".to_string(), Box::new(func::new));
             func_mp.insert("line".to_string(), Box::new(func::line));
             func_mp.insert("rand".to_string(), Box::new(func::rand));
-            //
+            //            
+            func_mp.insert("contact".to_string(), Box::new(func::contact));
             func_mp.insert("append".to_string(), Box::new(func::append));
             func_mp.insert("distinct".to_string(), Box::new(func::distinct));
             func_mp.insert("left".to_string(), Box::new(func::left));
@@ -597,9 +616,7 @@ impl EdgeEngine {
         }
         drop(lk);
     }
-}
 
-impl EdgeEngine {
     pub fn new(dm: Arc<dyn AsDataManager>) -> Self {
         Self::lazy_mp();
         Self { dm }
@@ -680,18 +697,105 @@ impl EdgeEngine {
     ///
     /// x_i = f_i(t', z)
     ///
+    /// index
+    ///
     /// ->x 依赖变量
     ///
     /// ->f 函数
     ///
     /// ->t 参数个数
-    async fn resolve_inc(&self, inc: &Inc, z: &str) -> io::Result<Vec<String>> {
-        let name = inc.input.as_str();
-        let name1 = inc.input1.as_str();
-
-        todo!()
+    async fn resolve_func_by_index(&self, func: &str) -> io::Result<Option<String>> {
+        let mut rs = self
+            .dm
+            .get(&Path::from_str(&format!("{func}->index")))
+            .await?;
+        Ok(rs.pop())
     }
 
+    /// return group
+    ///
+    /// ->index
+    ///
+    /// ->x->name
+    ///
+    /// ->x->group
+    ///
+    /// ->input
+    ///
+    /// ->input1
+    ///
+    /// ->z
+    async fn resolve_inc(&self, inc: &Inc, z: &str) -> io::Result<Vec<String>> {
+        let index_op = self.resolve_func_by_index(inc.function.as_str()).await?;
+        if index_op.is_none() {
+            return Err(io::Error::other(format!(
+                "no index:\n\rwhen resolve {}",
+                inc.function.as_str()
+            )));
+        }
+        let index = index_op.unwrap();
+        let group = gen_value();
+        self.dm
+            .set(
+                &Path::from_str(&format!("{group}->index")),
+                vec![index.clone()],
+            )
+            .await?;
+        self.dm
+            .set(&Path::from_str(&format!("{group}->z")), vec![z.to_string()])
+            .await?;
+
+        let x_v = self.dm.get(&Path::from_str(&format!("{index}->x"))).await?;
+        let mut r_x_v = Vec::with_capacity(x_v.len());
+        for x in &x_v {
+            let r_x = gen_value();
+            if x == "$->$input" {
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{r_x}->name")),
+                        vec![inc.input.as_str().to_string()],
+                    )
+                    .await?;
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{group}->input")),
+                        vec![inc.input.as_str().to_string()],
+                    )
+                    .await?;
+            } else if x == "$->$input1" {
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{r_x}->name")),
+                        vec![inc.input1.as_str().to_string()],
+                    )
+                    .await?;
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{group}->input1")),
+                        vec![inc.input1.as_str().to_string()],
+                    )
+                    .await?;
+            } else {
+                self.dm
+                    .set(&Path::from_str(&format!("{r_x}->name")), vec![x.clone()])
+                    .await?;
+            }
+            self.dm
+                .set(
+                    &Path::from_str(&format!("{r_x}->group")),
+                    vec![group.clone()],
+                )
+                .await?;
+            r_x_v.push(r_x);
+        }
+        Ok(r_x_v)
+    }
+
+    /// return x
+    ///
+    /// ->name
+    ///
+    /// ->group
     #[async_recursion::async_recursion]
     pub async fn resolve_func(&self, inc_v: &[Inc], z: &str) -> io::Result<Vec<String>> {
         let dm = self.dm.clone();
@@ -804,6 +908,39 @@ mod tests {
                 .await
                 .unwrap();
             assert!(rs["result"][0].as_str() == Some("'1 '"));
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
+
+    #[test]
+    fn test_resolve() {
+        let task = async {
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+            let rs = edge_engine
+                .execute1(&ScriptTree {
+                    script: [
+                        "test->inc = ? _",
+                        "test->inc->output = '$->$output' _",
+                        "test->inc->function = '+' _",
+                        "test->inc->input = '1' _",
+                        "test->inc->input1 = '1' _",
+                        "$->$output $resolve test 2",
+                    ]
+                    .join("\n"),
+                    name: "result".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            edge_engine.commit().await.unwrap();
+
+            assert!(rs["result"].len() == 2);
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
