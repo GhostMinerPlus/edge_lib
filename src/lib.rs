@@ -134,9 +134,7 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
                     input1: IncValue::from_str("$->$temp"),
                 });
             } else {
-                return Err(io::Error::other(
-                    "when parse_script:\n\tunknown operator",
-                ));
+                return Err(io::Error::other("when parse_script:\n\tunknown operator"));
             }
             continue;
         }
@@ -507,7 +505,7 @@ impl EdgeEngine {
                 } else if inc.function.as_str() == "$resolve" {
                     let input_item_v = self.dm.get(&input).await?;
                     if input_item_v.is_empty() {
-                        return Err(io::Error::other("no input:\n\rwhen $resolve"));
+                        return Err(io::Error::other("when $resolve:\n\rno input"));
                     }
                     let inc_v = get_inc_v(self.dm.clone(), &input_item_v[0]).await?;
                     if inc_v.is_empty() {
@@ -534,7 +532,8 @@ impl EdgeEngine {
                         .await?;
                     log::debug!("inc_v.len(): {}", inc_v.len());
                     self.invoke_inc_v(&new_root, &inc_v).await?;
-                    let rs = self.dm
+                    let rs = self
+                        .dm
                         .get(&Path::from_str(&format!("{new_root}->$output")))
                         .await?;
                     self.dm.set(&output, rs).await?;
@@ -590,7 +589,7 @@ impl EdgeEngine {
             func_mp.insert("new".to_string(), Box::new(func::new));
             func_mp.insert("line".to_string(), Box::new(func::line));
             func_mp.insert("rand".to_string(), Box::new(func::rand));
-            //            
+            //
             func_mp.insert("append".to_string(), Box::new(func::append));
             func_mp.insert("distinct".to_string(), Box::new(func::distinct));
             func_mp.insert("left".to_string(), Box::new(func::left));
@@ -612,6 +611,9 @@ impl EdgeEngine {
             func_mp.insert("sum".to_string(), Box::new(func::sum));
             //
             func_mp.insert("=".to_string(), Box::new(func::set));
+            //
+            func_mp.insert("slice".to_string(), Box::new(func::slice));
+            func_mp.insert("sort".to_string(), Box::new(func::sort));
             unsafe { EDGE_ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
         }
         drop(lk);

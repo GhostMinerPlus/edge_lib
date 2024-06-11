@@ -1,4 +1,10 @@
-use std::{cmp::min, collections::HashSet, io, pin::Pin, sync::Arc};
+use std::{
+    cmp::min,
+    collections::HashSet,
+    io,
+    pin::Pin,
+    sync::Arc,
+};
 
 use rand::random;
 
@@ -474,5 +480,43 @@ pub fn sum(
         }
         output_item_v.push(r.to_string());
         dm.set(&output, output_item_v).await
+    }
+}
+
+pub fn slice(
+    dm: Arc<dyn AsDataManager>,
+    output: Path,
+    input: Path,
+    input1: Path,
+) -> impl std::future::Future<Output = io::Result<()>> + Send {
+    async move {
+        let input_item_v = dm.get(&input).await?;
+        if input_item_v.is_empty() {
+            return Err(io::Error::other("when $slice:\n\rno input"));
+        }
+        let input1_item_v = dm.get(&input1).await?;
+        if input1_item_v.len() < 2 {
+            return Err(io::Error::other("when $slice:\n\rno input1"));
+        }
+        let start = input1_item_v[0]
+            .parse::<usize>()
+            .map_err(|e| io::Error::other(e))?;
+        let end = input1_item_v[1]
+            .parse::<usize>()
+            .map_err(|e| io::Error::other(e))?;
+        dm.set(&output, input_item_v[start..end].to_vec()).await
+    }
+}
+
+pub fn sort(
+    dm: Arc<dyn AsDataManager>,
+    output: Path,
+    input: Path,
+    _: Path,
+) -> impl std::future::Future<Output = io::Result<()>> + Send {
+    async move {
+        let mut input_item_v = dm.get(&input).await?;
+        input_item_v.sort();
+        dm.set(&output, input_item_v).await
     }
 }
