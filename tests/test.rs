@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use edge_lib::{
     data::{AsDataManager, MemDataManager, RecDataManager},
-    AsEdgeEngine, EdgeEngine, Path, ScriptTree,
+    EdgeEngine, Path, ScriptTree,
 };
 
 #[test]

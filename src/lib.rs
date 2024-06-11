@@ -10,7 +10,11 @@ use tokio::sync::RwLock;
 use crate::data::AsDataManager;
 
 fn gen_root() -> String {
-    format!("${}", uuid::Uuid::new_v4().to_string())
+    format!("${}", gen_value())
+}
+
+fn gen_value() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
@@ -19,7 +23,7 @@ async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
     } else if value.starts_with("$->") {
         Ok(format!("{root}{}", &value[1..]))
     } else if value == "?" {
-        Ok(uuid::Uuid::new_v4().to_string())
+        Ok(gen_value())
     } else if value == "$" {
         Ok(root.to_string())
     } else if value == "_" {
@@ -27,6 +31,31 @@ async fn unwrap_value(root: &str, value: &str) -> io::Result<String> {
     } else {
         Ok(value.to_string())
     }
+}
+
+async fn get_inc_v(dm: Arc<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
+    let output_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->output")))
+        .await?;
+    let function_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->function")))
+        .await?;
+    let input_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->input")))
+        .await?;
+    let input1_v = dm
+        .get(&Path::from_str(&format!("{function}->inc->input1")))
+        .await?;
+    let mut inc_v = Vec::with_capacity(output_v.len());
+    for i in 0..output_v.len() {
+        inc_v.push(Inc {
+            output: IncValue::from_string(util::escape_word(&output_v[i])),
+            function: IncValue::from_string(util::escape_word(&function_v[i])),
+            input: IncValue::from_string(util::escape_word(&input_v[i])),
+            input1: IncValue::from_string(util::escape_word(&input1_v[i])),
+        });
+    }
+    Ok(inc_v)
 }
 
 fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
@@ -78,17 +107,42 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
         }
 
         let word_v = split_line(line);
-        if word_v.len() != 5 {
+        if word_v.len() < 4 {
             return Err(io::Error::other(
-                "when parse_script:\n\tmore than 5 words in a line",
+                "when parse_script:\n\tless than 4 words in a line",
             ));
+        }
+        if word_v.len() == 5 {
+            if word_v[1] == "=" {
+                inc_v.push(Inc {
+                    output: IncValue::from_str(word_v[0].trim()),
+                    function: IncValue::from_str(word_v[2].trim()),
+                    input: IncValue::from_str(word_v[3].trim()),
+                    input1: IncValue::from_str(word_v[4].trim()),
+                });
+            } else if word_v[1] == "+=" {
+                inc_v.push(Inc {
+                    output: IncValue::from_str("$->$temp"),
+                    function: IncValue::from_str(word_v[2].trim()),
+                    input: IncValue::from_str(word_v[3].trim()),
+                    input1: IncValue::from_str(word_v[4].trim()),
+                });
+                inc_v.push(Inc {
+                    output: IncValue::from_str(word_v[0].trim()),
+                    function: IncValue::from_str("append"),
+                    input: IncValue::from_str(word_v[0].trim()),
+                    input1: IncValue::from_str("$->$temp"),
+                });
+            } else {
+                return Err(io::Error::other("when parse_script:\n\tunknown operator"));
+            }
+            continue;
         }
         inc_v.push(Inc {
             output: IncValue::from_str(word_v[0].trim()),
-            operator: IncValue::from_str(word_v[1].trim()),
-            function: IncValue::from_str(word_v[2].trim()),
-            input: IncValue::from_str(word_v[3].trim()),
-            input1: IncValue::from_str(word_v[4].trim()),
+            function: IncValue::from_str(word_v[1].trim()),
+            input: IncValue::from_str(word_v[2].trim()),
+            input1: IncValue::from_str(word_v[3].trim()),
         });
     }
     Ok(inc_v)
@@ -113,7 +167,6 @@ pub mod util;
 #[derive(Clone, Debug)]
 pub struct Inc {
     pub output: IncValue,
-    pub operator: IncValue,
     pub function: IncValue,
     pub input: IncValue,
     pub input1: IncValue,
@@ -355,23 +408,6 @@ pub struct ScriptTree {
     pub next_v: Vec<ScriptTree>,
 }
 
-pub trait AsEdgeEngine {
-    /// Deprecated
-    fn execute(
-        &mut self,
-        _: &json::JsonValue,
-    ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send {
-        async { Err(io::Error::other("deprecated")) }
-    }
-
-    fn execute1(
-        &mut self,
-        script_tree: &ScriptTree,
-    ) -> impl std::future::Future<Output = io::Result<json::JsonValue>> + Send;
-
-    fn commit(&mut self) -> impl std::future::Future<Output = io::Result<()>> + Send;
-}
-
 static mut EDGE_ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> = None;
 static mut EDGE_ENGINE_FUNC_MAP_OP_LOCK: Mutex<()> = Mutex::new(());
 
@@ -380,9 +416,170 @@ pub struct EdgeEngine {
 }
 
 impl EdgeEngine {
-    pub fn new(dm: Arc<dyn AsDataManager>) -> Self {
-        Self::lazy_mp();
-        Self { dm }
+    async fn get_one(&self, root: &str, value: &str) -> io::Result<String> {
+        let path = unwrap_value(root, value).await?;
+        let id_v = self.dm.get(&Path::from_str(&path)).await?;
+        if id_v.len() != 1 {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "need 1 but not"));
+        }
+        Ok(id_v[0].clone())
+    }
+
+    async fn unwrap_inc(&self, root: &str, inc: &Inc) -> io::Result<Inc> {
+        let inc = Inc {
+            output: IncValue::from_str(&unwrap_value(root, inc.output.as_str()).await?),
+            function: IncValue::from_str(&self.get_one(root, inc.function.as_str()).await?),
+            input: IncValue::from_str(&unwrap_value(root, inc.input.as_str()).await?),
+            input1: IncValue::from_str(&unwrap_value(root, inc.input1.as_str()).await?),
+        };
+        Ok(inc)
+    }
+
+    async fn invoke_inc_v(&self, root: &str, inc_v: &Vec<Inc>) -> io::Result<Vec<String>> {
+        log::debug!("inc_v.len(): {}", inc_v.len());
+        for inc in inc_v {
+            let inc = self.unwrap_inc(&root, inc).await?;
+            self.invoke_inc(&inc).await?;
+        }
+        self.dm
+            .get(&Path::from_str(&format!("{root}->$output")))
+            .await
+    }
+
+    #[async_recursion::async_recursion]
+    async fn inner_execute(
+        &self,
+        input: &str,
+        script_tree: &ScriptTree,
+        out_tree: &mut json::JsonValue,
+    ) -> io::Result<()> {
+        let root = gen_root();
+        self.dm
+            .append(
+                &Path::from_str(&format!("{root}->$input")),
+                vec![input.to_string()],
+            )
+            .await?;
+        let inc_v = parse_script(&script_tree.script)?;
+        let rs = self.invoke_inc_v(&root, &inc_v).await?;
+        if script_tree.next_v.is_empty() {
+            let _ = out_tree.insert(&script_tree.name, rs);
+            return Ok(());
+        }
+        let mut cur = json::object! {};
+        for next_tree in &script_tree.next_v {
+            // fork
+            for input in &rs {
+                let mut sub_out_tree = json::object! {};
+                self.inner_execute(input, next_tree, &mut sub_out_tree)
+                    .await?;
+                merge(&mut cur, &mut sub_out_tree);
+            }
+        }
+        let _ = out_tree.insert(&script_tree.name, cur);
+        Ok(())
+    }
+
+    #[async_recursion::async_recursion]
+    async fn invoke_inc(&self, inc: &Inc) -> io::Result<()> {
+        log::debug!("invoke_inc: {:?}", inc);
+        let output = Path::from_str(inc.output.as_str());
+        if output.step_v.is_empty() {
+            return Ok(());
+        }
+        let input = Path::from_str(inc.input.as_str());
+        let input1 = Path::from_str(inc.input1.as_str());
+        let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
+        match func_mp.get(inc.function.as_str()) {
+            Some(func) => {
+                func.invoke(self.dm.clone(), output.clone(), input, input1)
+                    .await?;
+            }
+            None => {
+                if inc.function.as_str() == "$func" {
+                    let mut rs = Vec::with_capacity(func_mp.len());
+                    for (name, _) in &*func_mp {
+                        rs.push(name.clone());
+                    }
+                    self.dm.set(&output, rs).await?;
+                } else if inc.function.as_str() == "$resolve" {
+                    let input_item_v = self.dm.get(&input).await?;
+                    if input_item_v.is_empty() {
+                        return Err(io::Error::other("when $resolve:\n\rno input"));
+                    }
+                    let inc_v = get_inc_v(self.dm.clone(), &input_item_v[0]).await?;
+                    if inc_v.is_empty() {
+                        return Err(io::Error::other("empty inc_v"));
+                    }
+                    let rs = self.resolve_func(&inc_v, inc.input1.as_str()).await?;
+                    self.dm.set(&output, rs).await?;
+                } else {
+                    let input_item_v = self.dm.get(&input).await?;
+                    let input1_item_v = self.dm.get(&input1).await?;
+                    let inc_v = get_inc_v(self.dm.clone(), inc.function.as_str()).await?;
+                    let new_root = gen_root();
+                    self.dm
+                        .set(
+                            &Path::from_str(&format!("{new_root}->$input")),
+                            input_item_v,
+                        )
+                        .await?;
+                    self.dm
+                        .set(
+                            &Path::from_str(&format!("{new_root}->$input1")),
+                            input1_item_v,
+                        )
+                        .await?;
+                    log::debug!("inc_v.len(): {}", inc_v.len());
+                    self.invoke_inc_v(&new_root, &inc_v).await?;
+                    let rs = self
+                        .dm
+                        .get(&Path::from_str(&format!("{new_root}->$output")))
+                        .await?;
+                    self.dm.set(&output, rs).await?;
+                }
+            }
+        }
+        if output.is_temp() {
+            return Ok(());
+        }
+        self.on_asigned(&output.step_v.last().unwrap().code).await
+    }
+
+    #[async_recursion::async_recursion]
+    async fn on_asigned(&self, code: &str) -> io::Result<()> {
+        let listener_v = self
+            .dm
+            .get(&Path::from_str(&format!("{code}->listener")))
+            .await?;
+        for listener in &listener_v {
+            let target_v = self
+                .dm
+                .get(&Path::from_str(&format!("{listener}->target")))
+                .await?;
+            if target_v.is_empty() {
+                continue;
+            }
+            let target = util::escape_word(&target_v[0]);
+            let inc_v = get_inc_v(self.dm.clone(), listener)
+                .await?
+                .into_iter()
+                .map(|mut inc| {
+                    *inc.output.as_mut() = inc.output.as_str().replace("$->$output", &target);
+                    inc
+                })
+                .collect::<Vec<Inc>>();
+            let new_root = gen_root();
+            self.dm
+                .set(
+                    &Path::from_str(&format!("{new_root}->$input")),
+                    vec![code.to_string()],
+                )
+                .await?;
+            self.invoke_inc_v(&new_root, &inc_v).await?;
+        }
+
+        Ok(())
     }
 
     fn lazy_mp() {
@@ -410,16 +607,21 @@ impl EdgeEngine {
             func_mp.insert(">".to_string(), Box::new(func::greater));
             func_mp.insert("<".to_string(), Box::new(func::smaller));
             //
-            func_mp.insert("divide".to_string(), Box::new(func::divide));
-            func_mp.insert("agent".to_string(), Box::new(func::agent));
-            //
             func_mp.insert("count".to_string(), Box::new(func::count));
             func_mp.insert("sum".to_string(), Box::new(func::sum));
             //
             func_mp.insert("=".to_string(), Box::new(func::set));
+            //
+            func_mp.insert("slice".to_string(), Box::new(func::slice));
+            func_mp.insert("sort".to_string(), Box::new(func::sort));
             unsafe { EDGE_ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
         }
         drop(lk);
+    }
+
+    pub fn new(dm: Arc<dyn AsDataManager>) -> Self {
+        Self::lazy_mp();
+        Self { dm }
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
@@ -458,203 +660,167 @@ impl EdgeEngine {
         };
     }
 
-    async fn dump_inc_v(dm: Arc<dyn AsDataManager>, function: &str) -> io::Result<Vec<Inc>> {
-        let output_v = dm
-            .get(&Path::from_str(&format!("{function}->inc->output")))
-            .await?;
-        let operator_v = dm
-            .get(&Path::from_str(&format!("{function}->inc->operator")))
-            .await?;
-        let function_v = dm
-            .get(&Path::from_str(&format!("{function}->inc->function")))
-            .await?;
-        let input_v = dm
-            .get(&Path::from_str(&format!("{function}->inc->input")))
-            .await?;
-        let input1_v = dm
-            .get(&Path::from_str(&format!("{function}->inc->input1")))
-            .await?;
-        let mut inc_v = Vec::with_capacity(output_v.len());
-        for i in 0..output_v.len() {
-            inc_v.push(Inc {
-                output: IncValue::from_string(util::escape_word(&output_v[i])),
-                operator: IncValue::from_string(util::escape_word(&operator_v[i])),
-                function: IncValue::from_string(util::escape_word(&function_v[i])),
-                input: IncValue::from_string(util::escape_word(&input_v[i])),
-                input1: IncValue::from_string(util::escape_word(&input1_v[i])),
-            });
-        }
-        Ok(inc_v)
-    }
-
-    async fn get_one(dm: Arc<dyn AsDataManager>, root: &str, id: &str) -> io::Result<String> {
-        let path = unwrap_value(root, id).await?;
-        let id_v = dm.get(&Path::from_str(&path)).await?;
-        if id_v.len() != 1 {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "need 1 but not"));
-        }
-        Ok(id_v[0].clone())
-    }
-
-    async fn unwrap_inc(dm: Arc<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<Inc> {
-        let inc = Inc {
-            output: IncValue::from_str(&unwrap_value(root, inc.output.as_str()).await?),
-            operator: IncValue::from_str(
-                &Self::get_one(dm.clone(), root, inc.operator.as_str()).await?,
-            ),
-            function: IncValue::from_str(
-                &Self::get_one(dm.clone(), root, inc.function.as_str()).await?,
-            ),
-            input: IncValue::from_str(&unwrap_value(root, inc.input.as_str()).await?),
-            input1: IncValue::from_str(&unwrap_value(root, inc.input1.as_str()).await?),
-        };
-        Ok(inc)
-    }
-
-    async fn invoke_inc_v(
-        dm: Arc<dyn AsDataManager>,
-        root: &str,
-        inc_v: &Vec<Inc>,
-    ) -> io::Result<Vec<String>> {
-        log::debug!("inc_v.len(): {}", inc_v.len());
-        for inc in inc_v {
-            let inc = Self::unwrap_inc(dm.clone(), &root, inc).await?;
-            Self::invoke_inc(dm.clone(), &inc).await?;
-        }
-        dm.get(&Path::from_str(&format!("{root}->$output"))).await
-    }
-
-    #[async_recursion::async_recursion]
-    async fn execute(
-        dm: Arc<dyn AsDataManager>,
-        input: &str,
-        script_tree: &ScriptTree,
-        out_tree: &mut json::JsonValue,
-    ) -> io::Result<()> {
-        let root = gen_root();
-        dm.append(
-            &Path::from_str(&format!("{root}->$input")),
-            vec![input.to_string()],
-        )
-        .await?;
-        let inc_v = parse_script(&script_tree.script)?;
-        let rs = Self::invoke_inc_v(dm.clone(), &root, &inc_v).await?;
-        if script_tree.next_v.is_empty() {
-            let _ = out_tree.insert(&script_tree.name, rs);
-            return Ok(());
-        }
-        let mut cur = json::object! {};
-        for next_tree in &script_tree.next_v {
-            // fork
-            for input in &rs {
-                let mut sub_out_tree = json::object! {};
-                Self::execute(dm.clone(), input, next_tree, &mut sub_out_tree).await?;
-                merge(&mut cur, &mut sub_out_tree);
-            }
-        }
-        let _ = out_tree.insert(&script_tree.name, cur);
-        Ok(())
-    }
-
-    #[async_recursion::async_recursion]
-    async fn invoke_inc(dm: Arc<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
-        log::debug!("invoke_inc: {:?}", inc);
-        let path = Path::from_str(inc.output.as_str());
-        if path.step_v.is_empty() {
-            return Ok(());
-        }
-        let input_item_v = dm.get(&Path::from_str(inc.input.as_str())).await?;
-        let input1_item_v = dm.get(&Path::from_str(inc.input1.as_str())).await?;
-        let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
-        let rs = match func_mp.get(inc.function.as_str()) {
-            Some(func) => func.invoke(dm.clone(), input_item_v, input1_item_v).await?,
-            None => {
-                if inc.function.as_str() == "$func" {
-                    let mut rs = Vec::with_capacity(func_mp.len());
-                    for (name, _) in &*func_mp {
-                        rs.push(name.clone());
-                    }
-                    rs
-                } else {
-                    let inc_v = Self::dump_inc_v(dm.clone(), inc.function.as_str()).await?;
-                    let new_root = gen_root();
-                    dm.set(
-                        &Path::from_str(&format!("{new_root}->$input")),
-                        input_item_v,
-                    )
-                    .await?;
-                    dm.set(
-                        &Path::from_str(&format!("{new_root}->$input1")),
-                        input1_item_v,
-                    )
-                    .await?;
-                    log::debug!("inc_v.len(): {}", inc_v.len());
-                    Self::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
-                    dm.get(&Path::from_str(&format!("{new_root}->$output")))
-                        .await?
-                }
-            }
-        };
-        if inc.operator.as_str() == "=" {
-            dm.set(&path, rs).await?;
-        } else {
-            dm.append(&path, rs).await?;
-        }
-        if path.is_temp() {
-            return Ok(());
-        }
-        Self::on_asigned(dm, &path.step_v.last().unwrap().code).await
-    }
-
-    #[async_recursion::async_recursion]
-    async fn on_asigned(dm: Arc<dyn AsDataManager>, code: &str) -> io::Result<()> {
-        let listener_v = dm
-            .get(&Path::from_str(&format!("{code}->listener")))
-            .await?;
-        for listener in &listener_v {
-            let target_v = dm
-                .get(&Path::from_str(&format!("{listener}->target")))
-                .await?;
-            if target_v.is_empty() {
-                continue;
-            }
-            let target = util::escape_word(&target_v[0]);
-            let inc_v = Self::dump_inc_v(dm.clone(), listener)
-                .await?
-                .into_iter()
-                .map(|mut inc| {
-                    *inc.output.as_mut() = inc.output.as_str().replace("$->$output", &target);
-                    inc
-                })
-                .collect::<Vec<Inc>>();
-            let new_root = gen_root();
-            dm.set(
-                &Path::from_str(&format!("{new_root}->$input")),
-                vec![code.to_string()],
-            )
-            .await?;
-            Self::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
-        }
-
-        Ok(())
-    }
-}
-
-impl AsEdgeEngine for EdgeEngine {
-    async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
+    pub async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
         let (script_str, next_v_json) = script_tree.entries().next().unwrap();
         let script_tree = Self::entry_2_tree(script_str, next_v_json);
         self.execute1(&script_tree).await
     }
 
-    async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
+    pub async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        Self::execute(self.dm.clone(), "", &script_tree, &mut out_tree).await?;
+        self.inner_execute("", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
     }
 
-    async fn commit(&mut self) -> io::Result<()> {
+    pub async fn commit(&mut self) -> io::Result<()> {
         self.dm.commit().await
+    }
+
+    fn find_setter(inc_v: &[Inc], x: &str) -> Option<usize> {
+        if inc_v.is_empty() {
+            return None;
+        }
+
+        let mut i = inc_v.len() - 1;
+        loop {
+            let inc = &inc_v[i];
+            if inc.output.as_str() == x {
+                return Some(i);
+            }
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+        }
+        None
+    }
+
+    /// 解析函数为参数方程组，并返回所有依赖变量
+    ///
+    /// x_i = f_i(t', z)
+    ///
+    /// index
+    ///
+    /// ->x 依赖变量
+    ///
+    /// ->f 函数
+    ///
+    /// ->t 参数个数
+    async fn resolve_func_by_index(&self, func: &str) -> io::Result<Option<String>> {
+        let mut rs = self
+            .dm
+            .get(&Path::from_str(&format!("{func}->index")))
+            .await?;
+        Ok(rs.pop())
+    }
+
+    /// return group
+    ///
+    /// ->index
+    ///
+    /// ->x->name
+    ///
+    /// ->x->group
+    ///
+    /// ->input
+    ///
+    /// ->input1
+    ///
+    /// ->z
+    async fn resolve_inc(&self, inc: &Inc, z: &str) -> io::Result<Vec<String>> {
+        let index_op = self.resolve_func_by_index(inc.function.as_str()).await?;
+        if index_op.is_none() {
+            return Err(io::Error::other(format!(
+                "no index:\n\rwhen resolve {}",
+                inc.function.as_str()
+            )));
+        }
+        let index = index_op.unwrap();
+        let group = gen_value();
+        self.dm
+            .set(
+                &Path::from_str(&format!("{group}->index")),
+                vec![index.clone()],
+            )
+            .await?;
+        self.dm
+            .set(&Path::from_str(&format!("{group}->z")), vec![z.to_string()])
+            .await?;
+
+        let x_v = self.dm.get(&Path::from_str(&format!("{index}->x"))).await?;
+        let mut r_x_v = Vec::with_capacity(x_v.len());
+        for x in &x_v {
+            let r_x = gen_value();
+            if x == "$->$input" {
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{r_x}->name")),
+                        vec![inc.input.as_str().to_string()],
+                    )
+                    .await?;
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{group}->input")),
+                        vec![inc.input.as_str().to_string()],
+                    )
+                    .await?;
+            } else if x == "$->$input1" {
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{r_x}->name")),
+                        vec![inc.input1.as_str().to_string()],
+                    )
+                    .await?;
+                self.dm
+                    .set(
+                        &Path::from_str(&format!("{group}->input1")),
+                        vec![inc.input1.as_str().to_string()],
+                    )
+                    .await?;
+            } else {
+                self.dm
+                    .set(&Path::from_str(&format!("{r_x}->name")), vec![x.clone()])
+                    .await?;
+            }
+            self.dm
+                .set(
+                    &Path::from_str(&format!("{r_x}->group")),
+                    vec![group.clone()],
+                )
+                .await?;
+            r_x_v.push(r_x);
+        }
+        Ok(r_x_v)
+    }
+
+    /// return x
+    ///
+    /// ->name
+    ///
+    /// ->group
+    #[async_recursion::async_recursion]
+    pub async fn resolve_func(&self, inc_v: &[Inc], z: &str) -> io::Result<Vec<String>> {
+        let dm = self.dm.clone();
+        if inc_v.is_empty() {
+            return Err(io::Error::other("empty inc_v"));
+        }
+        if inc_v.len() == 1 {
+            self.resolve_inc(&inc_v[0], z).await
+        } else {
+            let x_v = self.resolve_func(&inc_v[inc_v.len() - 1..], z).await?;
+            // 递归裂解
+            let mut c_x_v = Vec::with_capacity(x_v.len());
+            for x in x_v {
+                let name = &dm.get(&Path::from_str(&format!("{x}->name"))).await?[0];
+                if let Some(pos) = Self::find_setter(inc_v, name) {
+                    let x_v2 = self.resolve_func(&inc_v[0..pos + 1], &x).await?;
+                    c_x_v.extend(x_v2);
+                } else {
+                    c_x_v.push(x);
+                }
+            }
+            Ok(c_x_v)
+        }
     }
 }
 
@@ -667,7 +833,7 @@ mod tests {
         ScriptTree, EDGE_ENGINE_FUNC_MAP_OP,
     };
 
-    use super::{AsEdgeEngine, EdgeEngine};
+    use super::EdgeEngine;
 
     #[test]
     fn test() {
@@ -744,6 +910,39 @@ mod tests {
                 .await
                 .unwrap();
             assert!(rs["result"][0].as_str() == Some("'1 '"));
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(task);
+    }
+
+    #[test]
+    fn test_resolve() {
+        let task = async {
+            let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+
+            let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+            let rs = edge_engine
+                .execute1(&ScriptTree {
+                    script: [
+                        "test->inc = ? _",
+                        "test->inc->output = '$->$output' _",
+                        "test->inc->function = '+' _",
+                        "test->inc->input = '1' _",
+                        "test->inc->input1 = '1' _",
+                        "$->$output $resolve test 2",
+                    ]
+                    .join("\n"),
+                    name: "result".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            edge_engine.commit().await.unwrap();
+
+            assert!(rs["result"].len() == 2);
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
