@@ -76,11 +76,11 @@ fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
 
 fn split_line(line: &str) -> Vec<String> {
     let part_v: Vec<&str> = line.split(' ').collect();
-    if part_v.len() <= 5 {
+    if part_v.len() <= 4 {
         return part_v.into_iter().map(|s| s.to_string()).collect();
     }
 
-    let mut word_v = Vec::with_capacity(5);
+    let mut word_v = Vec::with_capacity(4);
     let mut entered = false;
     for part in part_v {
         if entered {
@@ -212,7 +212,7 @@ impl Path {
                 step_v: Vec::new(),
             };
         }
-        let mut s = Self::find_arrrow(path);
+        let mut s = Self::find_arrrow(path).unwrap();
 
         let root = path[0..s].to_string();
         if s == path.len() {
@@ -224,7 +224,7 @@ impl Path {
         let mut tail = &path[s..];
         let mut step_v = Vec::new();
         loop {
-            s = Self::find_arrrow(&tail[2..]) + 2;
+            s = Self::find_arrrow(&tail[2..]).unwrap() + 2;
             step_v.push(Step {
                 arrow: tail[0..2].to_string(),
                 code: tail[2..s].to_string(),
@@ -317,22 +317,26 @@ impl Path {
         pos
     }
 
-    fn find_arrrow_in_block(path: &str, pos: usize) -> usize {
-        let a_pos = Self::find_arrrow_in_pure(&path[0..pos]);
-        if a_pos < pos {
-            return a_pos;
+    fn find_arrrow_in_block(path: &str, pos: usize) -> Option<usize> {
+        match Self::find_arrrow_in_pure(&path[0..pos]) {
+            Some(a_pos) => Some(a_pos),
+            None => {
+                let c_pos = pos + 1 + Self::find_close_quotation(&path[pos + 1..]);
+                match Self::find_arrrow(&path[c_pos + 1..]) {
+                    Some(a_pos) => Some(c_pos + 1 + a_pos),
+                    None => None,
+                }
+            }
         }
-        let c_pos = pos + 1 + Self::find_close_quotation(&path[pos + 1..]);
-        c_pos + 1 + Self::find_arrrow(&path[c_pos + 1..])
     }
 
-    fn find_arrrow_in_pure(path: &str) -> usize {
+    fn find_arrrow_in_pure(path: &str) -> Option<usize> {
         let p = path.find("->");
         let q = path.find("<-");
         if p.is_none() && q.is_none() {
-            path.len()
+            None
         } else {
-            if p.is_some() && q.is_some() {
+            Some(if p.is_some() && q.is_some() {
                 let p = p.unwrap();
                 let q = q.unwrap();
                 std::cmp::min(p, q)
@@ -340,13 +344,15 @@ impl Path {
                 p.unwrap()
             } else {
                 q.unwrap()
-            }
+            })
         }
     }
 
-    fn find_arrrow(path: &str) -> usize {
+    fn find_arrrow(path: &str) -> Option<usize> {
         if let Some(pos) = path.find('\'') {
-            return Self::find_arrrow_in_block(path, pos);
+            if pos == 0 || &path[pos - 1..pos] != "\\" {
+                return Self::find_arrrow_in_block(path, pos);
+            }
         }
         Self::find_arrrow_in_pure(path)
     }
