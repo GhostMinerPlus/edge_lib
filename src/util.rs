@@ -11,6 +11,7 @@ pub fn escape_word(mut word: &str) -> String {
                 let ch = &word[pos + offset + 1..pos + offset + 2];
                 let ch = match ch {
                     "n" => "\n",
+                    "s" => " ",
                     _ => ch,
                 };
                 rs = format!("{rs}{}{ch}", &word[pos..pos + offset]);

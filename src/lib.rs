@@ -74,31 +74,6 @@ fn merge(p_tree: &mut json::JsonValue, s_tree: &mut json::JsonValue) {
     }
 }
 
-fn split_line(line: &str) -> Vec<String> {
-    let part_v: Vec<&str> = line.split(' ').collect();
-    if part_v.len() <= 4 {
-        return part_v.into_iter().map(|s| s.to_string()).collect();
-    }
-
-    let mut word_v = Vec::with_capacity(4);
-    let mut entered = false;
-    for part in part_v {
-        if entered {
-            *word_v.last_mut().unwrap() = format!("{} {part}", word_v.last().unwrap());
-            if part.ends_with('\'') && !part.ends_with("\\'") {
-                entered = false;
-            }
-        } else {
-            word_v.push(part.to_string());
-            if part.starts_with('\'') {
-                entered = true;
-            }
-        }
-    }
-
-    return word_v;
-}
-
 fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
     let mut inc_v = Vec::new();
     for line in script.lines() {
@@ -106,7 +81,7 @@ fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
             continue;
         }
 
-        let word_v = split_line(line);
+        let word_v: Vec<&str> = line.split(' ').collect();
         if word_v.len() < 4 {
             return Err(io::Error::other(
                 "when parse_script:\n\tless than 4 words in a line",
@@ -212,7 +187,7 @@ impl Path {
                 step_v: Vec::new(),
             };
         }
-        let mut s = Self::find_arrrow(path).unwrap();
+        let mut s = Self::find_arrrow(path).unwrap_or(path.len());
 
         let root = path[0..s].to_string();
         if s == path.len() {
@@ -224,7 +199,7 @@ impl Path {
         let mut tail = &path[s..];
         let mut step_v = Vec::new();
         loop {
-            s = Self::find_arrrow(&tail[2..]).unwrap() + 2;
+            s = Self::find_arrrow(&tail[2..]).unwrap_or(tail.len());
             step_v.push(Step {
                 arrow: tail[0..2].to_string(),
                 code: tail[2..s].to_string(),
@@ -306,22 +281,22 @@ impl Path {
         }
     }
 
-    fn find_close_quotation(path: &str) -> usize {
-        let pos = path.find('\'').unwrap();
+    fn find_quotation(path: &str) -> Option<usize> {
+        let pos = path.find('\'')?;
         if pos == 0 {
-            return 0;
+            return Some(0);
         }
         if &path[pos - 1..pos] == "\\" {
-            return pos + 1 + Self::find_close_quotation(&path[pos + 1..]);
+            return Some(pos + 1 + Self::find_quotation(&path[pos + 1..])?);
         }
-        pos
+        Some(pos)
     }
 
     fn find_arrrow_in_block(path: &str, pos: usize) -> Option<usize> {
         match Self::find_arrrow_in_pure(&path[0..pos]) {
             Some(a_pos) => Some(a_pos),
             None => {
-                let c_pos = pos + 1 + Self::find_close_quotation(&path[pos + 1..]);
+                let c_pos = pos + 1 + Self::find_quotation(&path[pos + 1..])?;
                 match Self::find_arrrow(&path[c_pos + 1..]) {
                     Some(a_pos) => Some(c_pos + 1 + a_pos),
                     None => None,
@@ -349,10 +324,8 @@ impl Path {
     }
 
     fn find_arrrow(path: &str) -> Option<usize> {
-        if let Some(pos) = path.find('\'') {
-            if pos == 0 || &path[pos - 1..pos] != "\\" {
-                return Self::find_arrrow_in_block(path, pos);
-            }
+        if let Some(pos) = Self::find_quotation(path) {
+            return Self::find_arrrow_in_block(path, pos);
         }
         Self::find_arrrow_in_pure(path)
     }
@@ -909,13 +882,13 @@ mod tests {
             let mut edge_engine = EdgeEngine::new(Arc::new(dm));
             let rs = edge_engine
                 .execute1(&ScriptTree {
-                    script: ["$->$output = = '1 ' _"].join("\n"),
+                    script: ["$->$output = = '1\\s' _"].join("\n"),
                     name: "result".to_string(),
                     next_v: vec![],
                 })
                 .await
                 .unwrap();
-            assert!(rs["result"][0].as_str() == Some("'1 '"));
+            assert!(rs["result"][0].as_str() == Some("'1\\s'"));
         };
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
