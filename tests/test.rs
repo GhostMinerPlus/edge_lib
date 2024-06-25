@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use edge_lib::{
-    data::{AsDataManager, MemDataManager, RecDataManager},
-    EdgeEngine, Path, ScriptTree,
+    data::{AsDataManager, MemDataManager, RecDataManager}, util::Path, EdgeEngine, ScriptTree
 };
 
 #[test]

@@ -2,7 +2,7 @@ use std::{collections::HashMap, future, io, pin::Pin, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{mem_table, Path, PathPart};
+use crate::{mem_table, util::{Path, PathPart}};
 
 // Public
 pub trait AsDataManager: Send + Sync {
