@@ -11,8 +11,9 @@ fn insert(mp: &mut BTreeMap<(String, String), BTreeSet<u64>>, k: (String, String
 }
 
 fn next_id(id: &mut u64) -> u64 {
-    *id = *id + 1;
-    *id
+    let new_id = *id;
+    *id += 1;
+    new_id
 }
 
 // Public

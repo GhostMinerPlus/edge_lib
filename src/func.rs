@@ -1,16 +1,9 @@
-use std::{
-    cmp::min,
-    collections::HashSet,
-    io,
-    pin::Pin,
-    sync::Arc,
-};
+use std::{cmp::min, collections::HashSet, io, pin::Pin, sync::Arc};
 
 use rand::random;
 
-use crate::{data::AsDataManager, Path};
+use crate::{data::AsDataManager, util::Path};
 
-// Public
 pub trait AsFunc: Send + Sync {
     fn invoke(
         &self,
@@ -492,11 +485,11 @@ pub fn slice(
     async move {
         let input_item_v = dm.get(&input).await?;
         if input_item_v.is_empty() {
-            return Err(io::Error::other("when $slice:\n\rno input"));
+            return Err(io::Error::other("no input\nwhen slice"));
         }
         let input1_item_v = dm.get(&input1).await?;
         if input1_item_v.len() < 2 {
-            return Err(io::Error::other("when $slice:\n\rno input1"));
+            return Err(io::Error::other("no input1\nwhen slice"));
         }
         let start = input1_item_v[0]
             .parse::<usize>()
@@ -512,11 +505,52 @@ pub fn sort(
     dm: Arc<dyn AsDataManager>,
     output: Path,
     input: Path,
-    _: Path,
+    order: Path,
 ) -> impl std::future::Future<Output = io::Result<()>> + Send {
     async move {
-        let mut input_item_v = dm.get(&input).await?;
-        input_item_v.sort();
-        dm.set(&output, input_item_v).await
+        let input_item_v = dm.get(&input).await?;
+        let order_v = dm.get(&order).await?;
+        if input_item_v.len() != order_v.len() {
+            return Err(io::Error::other("not the same length\nwhen sort"));
+        }
+        let mut temp = input_item_v
+            .into_iter()
+            .enumerate()
+            .map(|(i, item)| (item, order_v[i].parse().unwrap()))
+            .collect::<Vec<(String, f64)>>();
+        temp.sort_by(|p, q| {
+            if p.1 == q.1 {
+                std::cmp::Ordering::Equal
+            } else if p.1 > q.1 {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            }
+        });
+        dm.set(&output, temp.into_iter().map(|(item, _)| item).collect())
+            .await
+    }
+}
+
+pub fn sort_s(
+    dm: Arc<dyn AsDataManager>,
+    output: Path,
+    input: Path,
+    order: Path,
+) -> impl std::future::Future<Output = io::Result<()>> + Send {
+    async move {
+        let input_item_v = dm.get(&input).await?;
+        let order_v = dm.get(&order).await?;
+        if input_item_v.len() != order_v.len() {
+            return Err(io::Error::other("not the same length\nwhen sort"));
+        }
+        let mut temp = input_item_v
+            .into_iter()
+            .enumerate()
+            .map(|(i, item)| (item, &order_v[i]))
+            .collect::<Vec<(String, &String)>>();
+        temp.sort_by(|p, q| p.1.cmp(q.1));
+        dm.set(&output, temp.into_iter().map(|(item, _)| item).collect())
+            .await
     }
 }

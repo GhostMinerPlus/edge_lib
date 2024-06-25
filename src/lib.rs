@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, io, sync::Arc};
+use std::{io, sync::Arc};
 
 use crate::data::AsDataManager;
 
@@ -15,196 +15,6 @@ pub struct Inc {
     pub function: IncValue,
     pub input: IncValue,
     pub input1: IncValue,
-}
-
-pub enum PathType {
-    Pure,
-    Temp,
-    Mixed,
-}
-
-pub enum PathPart {
-    Pure(Path),
-    Temp(Path),
-    EntirePure,
-    EntireTemp,
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct Step {
-    pub arrow: String,
-    pub code: String,
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct Path {
-    pub root: String,
-    pub step_v: Vec<Step>,
-}
-
-impl Path {
-    pub fn from_str(path: &str) -> Self {
-        if path.is_empty() {
-            return Path {
-                root: String::new(),
-                step_v: Vec::new(),
-            };
-        }
-        log::debug!("Path::from_str: {path}");
-        if path.starts_with('\'') && path.ends_with('\'') {
-            return Self {
-                root: path.to_string(),
-                step_v: Vec::new(),
-            };
-        }
-        let mut s = Self::find_arrrow(path).unwrap_or(path.len());
-
-        let root = path[0..s].to_string();
-        if s == path.len() {
-            return Self {
-                root,
-                step_v: Vec::new(),
-            };
-        }
-        let mut tail = &path[s..];
-        let mut step_v = Vec::new();
-        loop {
-            s = Self::find_arrrow(&tail[2..]).unwrap_or(tail.len());
-            step_v.push(Step {
-                arrow: tail[0..2].to_string(),
-                code: tail[2..s].to_string(),
-            });
-            if s == tail.len() {
-                break;
-            }
-            tail = &tail[s..];
-        }
-        Self { root, step_v }
-    }
-
-    pub fn to_string(&self) -> String {
-        let mut s = self.root.clone();
-        for step in &self.step_v {
-            s = format!("{s}{}{}", step.arrow, step.code);
-        }
-        s
-    }
-
-    pub fn is_temp(&self) -> bool {
-        if self.step_v.is_empty() {
-            return false;
-        }
-        self.step_v.last().unwrap().code.starts_with('$')
-    }
-
-    pub fn path_type(&self) -> PathType {
-        let mut cnt = 0;
-        for i in 0..self.step_v.len() {
-            if self.step_v[i].code.starts_with('$') {
-                cnt += 1;
-            }
-        }
-        if cnt == 0 {
-            PathType::Pure
-        } else if cnt == self.step_v.len() {
-            PathType::Temp
-        } else {
-            PathType::Mixed
-        }
-    }
-
-    pub fn first_part(&self) -> PathPart {
-        if self.step_v.is_empty() {
-            return PathPart::EntirePure;
-        }
-        let first_step = &self.step_v[0];
-        if first_step.code.starts_with('$') {
-            let mut end = 1;
-            for i in 1..self.step_v.len() {
-                if !self.step_v[i].code.starts_with('$') {
-                    break;
-                }
-                end += 1;
-            }
-            if end == self.step_v.len() {
-                return PathPart::EntireTemp;
-            }
-            PathPart::Temp(Path {
-                root: self.root.clone(),
-                step_v: self.step_v[0..end].to_vec(),
-            })
-        } else {
-            let mut end = 1;
-            for i in 1..self.step_v.len() {
-                if self.step_v[i].code.starts_with('$') {
-                    break;
-                }
-                end += 1;
-            }
-            if end == self.step_v.len() {
-                return PathPart::EntirePure;
-            }
-            PathPart::Pure(Path {
-                root: self.root.clone(),
-                step_v: self.step_v[0..end].to_vec(),
-            })
-        }
-    }
-
-    fn find_quotation(path: &str) -> Option<usize> {
-        let pos = path.find('\'')?;
-        if pos == 0 {
-            return Some(0);
-        }
-        if &path[pos - 1..pos] == "\\" {
-            return Some(pos + 1 + Self::find_quotation(&path[pos + 1..])?);
-        }
-        Some(pos)
-    }
-
-    fn find_arrrow_in_block(path: &str, pos: usize) -> Option<usize> {
-        match Self::find_arrrow_in_pure(&path[0..pos]) {
-            Some(a_pos) => Some(a_pos),
-            None => {
-                let c_pos = pos + 1 + Self::find_quotation(&path[pos + 1..])?;
-                match Self::find_arrrow(&path[c_pos + 1..]) {
-                    Some(a_pos) => Some(c_pos + 1 + a_pos),
-                    None => None,
-                }
-            }
-        }
-    }
-
-    fn find_arrrow_in_pure(path: &str) -> Option<usize> {
-        let p = path.find("->");
-        let q = path.find("<-");
-        if p.is_none() && q.is_none() {
-            None
-        } else {
-            Some(if p.is_some() && q.is_some() {
-                let p = p.unwrap();
-                let q = q.unwrap();
-                std::cmp::min(p, q)
-            } else if p.is_some() {
-                p.unwrap()
-            } else {
-                q.unwrap()
-            })
-        }
-    }
-
-    fn find_arrrow(path: &str) -> Option<usize> {
-        if let Some(pos) = Self::find_quotation(path) {
-            return Self::find_arrrow_in_block(path, pos);
-        }
-        Self::find_arrrow_in_pure(path)
-    }
-}
-
-impl Display for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -267,26 +77,11 @@ impl EdgeEngine {
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
-        let mut next_v = Vec::with_capacity(next_v_json.len());
-        for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
-            next_v.push(Self::entry_2_tree(sub_script_str, sub_next_v_json));
-        }
-        let (script, name) = match script_str.rfind('\n') {
-            Some(pos) => (
-                script_str[0..pos].to_string(),
-                script_str[pos + 1..].to_string(),
-            ),
-            None => (script_str.to_string(), script_str.to_string()),
-        };
-        ScriptTree {
-            script,
-            name,
-            next_v,
-        }
+        main::entry_2_tree(script_str, next_v_json)
     }
 
     pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
-        main::tree_2_entry(script_tree)
+        main::tree_2_entry::<dep::Dep>(script_tree)
     }
 
     pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
@@ -327,7 +122,11 @@ mod main {
     use tokio::sync::RwLock;
 
     use crate::{
-        data::AsDataManager, dep::AsDep, func, util, EdgeEngine, Inc, IncValue, Path, ScriptTree,
+        data::AsDataManager,
+        dep::AsDep,
+        func,
+        util::{self, Path},
+        EdgeEngine, Inc, IncValue, ScriptTree,
     };
 
     static mut EDGE_ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> =
@@ -339,6 +138,7 @@ mod main {
         EdgeEngine { dm }
     }
 
+    /// 执行脚本树
     pub async fn execute1<D: AsDep>(
         this: &mut EdgeEngine,
         script_tree: &ScriptTree,
@@ -348,6 +148,194 @@ mod main {
         Ok(out_tree)
     }
 
+    #[cfg(test)]
+    mod test_execute1 {
+        use std::sync::Arc;
+
+        use crate::{
+            data::{MemDataManager, RecDataManager},
+            main::EDGE_ENGINE_FUNC_MAP_OP,
+            EdgeEngine, ScriptTree,
+        };
+
+        #[test]
+        fn test() {
+            let task = async {
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "$->$left = new 100 100",
+                            "$->$right = new 100 100",
+                            "$->$output = + $->$left $->$right",
+                        ]
+                        .join("\n"),
+                        name: "root".to_string(),
+                        next_v: vec![ScriptTree {
+                            script: format!("$->$output = rand $->$input _"),
+                            name: "then".to_string(),
+                            next_v: vec![],
+                        }],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+                let rs = &rs["root"]["then"];
+                assert_eq!(rs.len(), 100);
+                assert_eq!(rs[0].len(), 200);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_if() {
+            let task = async {
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "$->$server_exists = inner root->web_server huiwen<-name",
+                            "$->$web_server = if $->$server_exists ?",
+                            "$->$output = = $->$web_server _",
+                        ]
+                        .join("\n"),
+                        name: "info".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                assert!(!rs["info"].is_empty());
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_space() {
+            let task = async {
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: ["$->$output = = '1\\s' _"].join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                assert!(rs["result"][0].as_str() == Some("'1\\s'"));
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_resolve() {
+            let task = async {
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+
+                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "test->inc = ? _",
+                            "test->inc->output = '$->$output' _",
+                            "test->inc->function = '+' _",
+                            "test->inc->input = '1' _",
+                            "test->inc->input1 = '1' _",
+                            "$->$output $resolve test 2",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+
+                assert!(rs["result"].len() == 2);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_cache() {
+            let task = async {
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+
+                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                edge_engine
+                    .execute1(&ScriptTree {
+                        script: ["root->name = = edge _"].join("\n"),
+                        name: "".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: ["test->name = = edge _", "$->$output = = edge<-name _"].join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+
+                assert!(rs["result"].len() == 2);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_func() {
+            let task = async {
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let r_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read() }.await;
+                let sz = r_mp.len();
+                drop(r_mp);
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: ["$->$output = $func _ _"].join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(rs["result"].len(), sz);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+    }
+
+    /// 配置函数
     pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
         lazy_mp();
         let mut w_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().write() }.await;
@@ -357,6 +345,7 @@ mod main {
         };
     }
 
+    /// 解函数
     #[async_recursion::async_recursion]
     pub async fn resolve_func<D: AsDep>(
         this: &EdgeEngine,
@@ -370,13 +359,13 @@ mod main {
         if inc_v.len() == 1 {
             resolve_inc::<D>(this, &inc_v[0], z).await
         } else {
-            let x_v = this.resolve_func(&inc_v[inc_v.len() - 1..], z).await?;
+            let x_v = resolve_func::<D>(this, &inc_v[inc_v.len() - 1..], z).await?;
             // 递归裂解
             let mut c_x_v = Vec::with_capacity(x_v.len());
             for x in x_v {
                 let name = &dm.get(&Path::from_str(&format!("{x}->name"))).await?[0];
                 if let Some(pos) = find_setter(inc_v, name) {
-                    let x_v2 = this.resolve_func(&inc_v[0..pos + 1], &x).await?;
+                    let x_v2 = resolve_func::<D>(this, &inc_v[0..pos + 1], &x).await?;
                     c_x_v.extend(x_v2);
                 } else {
                     c_x_v.push(x);
@@ -386,31 +375,33 @@ mod main {
         }
     }
 
-    pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
+    /// 参数转换
+    pub fn tree_2_entry<D: AsDep>(script_tree: &ScriptTree) -> json::JsonValue {
         let script = format!("{}\n{}", script_tree.script, script_tree.name);
-        let value = tree_2_entry(script_tree);
+        let value = D::tree_2_entry(script_tree);
         let mut json = json::object! {};
         let _ = json.insert(&script, value);
         json
     }
 
-    /// 解析函数为参数方程组，并返回所有依赖变量
-    ///
-    /// x_i = f_i(t', z)
-    ///
-    /// index
-    ///
-    /// ->x 依赖变量
-    ///
-    /// ->f 函数
-    ///
-    /// ->t 参数个数
-    async fn resolve_func_by_index(this: &EdgeEngine, func: &str) -> io::Result<Option<String>> {
-        let mut rs = this
-            .dm
-            .get(&Path::from_str(&format!("{func}->index")))
-            .await?;
-        Ok(rs.pop())
+    /// 参数转换
+    pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
+        let mut next_v = Vec::with_capacity(next_v_json.len());
+        for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
+            next_v.push(entry_2_tree(sub_script_str, sub_next_v_json));
+        }
+        let (script, name) = match script_str.rfind('\n') {
+            Some(pos) => (
+                script_str[0..pos].to_string(),
+                script_str[pos + 1..].to_string(),
+            ),
+            None => (script_str.to_string(), script_str.to_string()),
+        };
+        ScriptTree {
+            script,
+            name,
+            next_v,
+        }
     }
 
     /// return group
@@ -431,7 +422,7 @@ mod main {
         inc: &Inc,
         z: &str,
     ) -> io::Result<Vec<String>> {
-        let index_op = resolve_func_by_index(this, inc.function.as_str()).await?;
+        let index_op = D::resolve_func_by_index(this, inc.function.as_str()).await?;
         if index_op.is_none() {
             return Err(io::Error::other(format!(
                 "no index:\n\rwhen resolve {}",
@@ -703,7 +694,7 @@ mod main {
                     if inc_v.is_empty() {
                         return Err(io::Error::other("empty inc_v"));
                     }
-                    let rs = this.resolve_func(&inc_v, inc.input1.as_str()).await?;
+                    let rs = resolve_func::<D>(this, &inc_v, inc.input1.as_str()).await?;
                     this.dm.set(&output, rs).await?;
                 } else {
                     let input_item_v = this.dm.get(&input).await?;
@@ -738,7 +729,6 @@ mod main {
         on_asigned::<D>(this, &output.step_v.last().unwrap().code).await
     }
 
-    #[async_recursion::async_recursion]
     async fn on_asigned<D: AsDep>(this: &EdgeEngine, code: &str) -> io::Result<()> {
         let listener_v = this
             .dm
@@ -806,201 +796,17 @@ mod main {
             //
             func_mp.insert("slice".to_string(), Box::new(func::slice));
             func_mp.insert("sort".to_string(), Box::new(func::sort));
+            func_mp.insert("sort_s".to_string(), Box::new(func::sort_s));
             unsafe { EDGE_ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
         }
         drop(lk);
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use std::sync::Arc;
-
-        use crate::{
-            data::{MemDataManager, RecDataManager},
-            main::EDGE_ENGINE_FUNC_MAP_OP,
-            EdgeEngine, ScriptTree,
-        };
-
-        #[test]
-        fn test() {
-            let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
-                let rs = edge_engine
-                    .execute1(&ScriptTree {
-                        script: [
-                            "$->$left = new 100 100",
-                            "$->$right = new 100 100",
-                            "$->$output = + $->$left $->$right",
-                        ]
-                        .join("\n"),
-                        name: "root".to_string(),
-                        next_v: vec![ScriptTree {
-                            script: format!("$->$output = rand $->$input _"),
-                            name: "then".to_string(),
-                            next_v: vec![],
-                        }],
-                    })
-                    .await
-                    .unwrap();
-                edge_engine.commit().await.unwrap();
-                let rs = &rs["root"]["then"];
-                assert_eq!(rs.len(), 100);
-                assert_eq!(rs[0].len(), 200);
-            };
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(task);
-        }
-
-        #[test]
-        fn test_if() {
-            let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
-                let rs = edge_engine
-                    .execute1(&ScriptTree {
-                        script: [
-                            "$->$server_exists = inner root->web_server huiwen<-name",
-                            "$->$web_server = if $->$server_exists ?",
-                            "$->$output = = $->$web_server _",
-                        ]
-                        .join("\n"),
-                        name: "info".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                assert!(!rs["info"].is_empty());
-            };
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(task);
-        }
-
-        #[test]
-        fn test_space() {
-            let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
-                let rs = edge_engine
-                    .execute1(&ScriptTree {
-                        script: ["$->$output = = '1\\s' _"].join("\n"),
-                        name: "result".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                assert!(rs["result"][0].as_str() == Some("'1\\s'"));
-            };
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(task);
-        }
-
-        #[test]
-        fn test_resolve() {
-            let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
-
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
-                let rs = edge_engine
-                    .execute1(&ScriptTree {
-                        script: [
-                            "test->inc = ? _",
-                            "test->inc->output = '$->$output' _",
-                            "test->inc->function = '+' _",
-                            "test->inc->input = '1' _",
-                            "test->inc->input1 = '1' _",
-                            "$->$output $resolve test 2",
-                        ]
-                        .join("\n"),
-                        name: "result".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                edge_engine.commit().await.unwrap();
-
-                assert!(rs["result"].len() == 2);
-            };
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(task);
-        }
-
-        #[test]
-        fn test_cache() {
-            let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
-
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
-                edge_engine
-                    .execute1(&ScriptTree {
-                        script: ["root->name = = edge _"].join("\n"),
-                        name: "".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                edge_engine.commit().await.unwrap();
-
-                let rs = edge_engine
-                    .execute1(&ScriptTree {
-                        script: ["test->name = = edge _", "$->$output = = edge<-name _"].join("\n"),
-                        name: "result".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                edge_engine.commit().await.unwrap();
-
-                assert!(rs["result"].len() == 2);
-            };
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(task);
-        }
-
-        #[test]
-        fn test_func() {
-            let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
-                let r_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read() }.await;
-                let sz = r_mp.len();
-                drop(r_mp);
-                let rs = edge_engine
-                    .execute1(&ScriptTree {
-                        script: ["$->$output = $func _ _"].join("\n"),
-                        name: "result".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                assert_eq!(rs["result"].len(), sz);
-            };
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(task);
-        }
     }
 }
 
 mod dep {
     use std::io;
+
+    use crate::{util::Path, EdgeEngine, ScriptTree};
 
     pub struct Dep {}
 
@@ -1028,6 +834,39 @@ mod dep {
                 Ok("".to_string())
             } else {
                 Ok(value.to_string())
+            }
+        }
+
+        fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
+            let mut value = json::object! {};
+            for next_item in &script_tree.next_v {
+                let sub_script = format!("{}\n{}", next_item.script, next_item.name);
+                let _ = value.insert(&sub_script, Self::tree_2_entry(next_item));
+            }
+            value
+        }
+
+        /// 解析函数为参数方程组，并返回所有依赖变量
+        ///
+        /// x_i = f_i(t', z)
+        ///
+        /// index
+        ///
+        /// ->x 依赖变量
+        ///
+        /// ->f 函数
+        ///
+        /// ->t 参数个数
+        fn resolve_func_by_index(
+            this: &EdgeEngine,
+            func: &str,
+        ) -> impl std::future::Future<Output = io::Result<Option<String>>> + Send {
+            async move {
+                let mut rs = this
+                    .dm
+                    .get(&Path::from_str(&format!("{func}->index")))
+                    .await?;
+                Ok(rs.pop())
             }
         }
     }
