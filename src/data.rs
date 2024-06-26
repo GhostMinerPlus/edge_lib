@@ -2,11 +2,19 @@ use std::{collections::HashMap, future, io, pin::Pin, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{mem_table, util::{Path, PathPart}};
+use crate::{
+    mem_table,
+    util::{Path, PathPart},
+};
 
-// Public
+#[derive(Clone)]
+pub struct Auth {
+    pub uid: String,
+    pub gid_v: Vec<String>,
+}
+
 pub trait AsDataManager: Send + Sync {
-    fn divide(&self) -> Arc<dyn AsDataManager>;
+    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager>;
 
     /// Get all targets from `source->code`
     fn append(
@@ -35,27 +43,35 @@ pub trait AsDataManager: Send + Sync {
 
 #[derive(Clone)]
 pub struct MemDataManager {
+    auth: Auth,
     mem_table: Arc<Mutex<mem_table::MemTable>>,
 }
 
 impl MemDataManager {
     pub fn new() -> Self {
         Self {
+            auth: Auth {
+                uid: "root".to_string(),
+                gid_v: Vec::new(),
+            },
             mem_table: Arc::new(Mutex::new(mem_table::MemTable::new())),
         }
     }
 }
 
 impl AsDataManager for MemDataManager {
-    fn divide(&self) -> Arc<dyn AsDataManager> {
-        Arc::new(self.clone())
+    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
+        Arc::new(Self {
+            auth,
+            mem_table: self.mem_table.clone(),
+        })
     }
 
     fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         let this = self.clone();
         Box::pin(async move {
             let mut mem_table = this.mem_table.lock().await;
-            mem_table.clear();
+            mem_table.clear(&this.auth);
             Ok(())
         })
     }
@@ -72,15 +88,15 @@ impl AsDataManager for MemDataManager {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mdm = self.clone();
+        let this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
-            let root_v = mdm.get(&path).await?;
-            let mut mem_table = mdm.mem_table.lock().await;
+            let root_v = this.get(&path).await?;
+            let mut mem_table = this.mem_table.lock().await;
             for source in &root_v {
                 for target in &item_v {
-                    mem_table.insert_edge(source, &step.code, target);
+                    mem_table.insert_edge(&this.auth, source, &step.code, target);
                 }
             }
             Ok(())
@@ -102,11 +118,11 @@ impl AsDataManager for MemDataManager {
             let root_v = mdm.get(&path).await?;
             let mut mem_table = mdm.mem_table.lock().await;
             for source in &root_v {
-                mem_table.delete_edge_with_source_code(source, &step.code);
+                mem_table.delete_edge_with_source_code(&mdm.auth, source, &step.code);
             }
             for source in &root_v {
                 for target in &item_v {
-                    mem_table.insert_edge(source, &step.code, target);
+                    mem_table.insert_edge(&mdm.auth, source, &step.code, target);
                 }
             }
             Ok(())
@@ -133,13 +149,13 @@ impl AsDataManager for MemDataManager {
                 if step.arrow == "->" {
                     let mut n_rs = Vec::new();
                     for source in &rs {
-                        n_rs.extend(mem_table.get_target_v(source, &step.code));
+                        n_rs.extend(mem_table.get_target_v(&mdm.auth, source, &step.code));
                     }
                     rs = n_rs;
                 } else {
                     let mut n_rs = Vec::new();
                     for target in &rs {
-                        n_rs.extend(mem_table.get_source_v(&step.code, target));
+                        n_rs.extend(mem_table.get_source_v(&mdm.auth, &step.code, target));
                     }
                     rs = n_rs;
                 }
@@ -151,22 +167,25 @@ impl AsDataManager for MemDataManager {
 
 #[derive(Clone)]
 struct UnitDataManager {
-    global: Arc<Mutex<Arc<dyn AsDataManager>>>,
-    temp: Arc<Mutex<MemDataManager>>,
+    global: Arc<dyn AsDataManager>,
+    temp: Arc<dyn AsDataManager>,
 }
 
 impl UnitDataManager {
     fn new(global: Arc<dyn AsDataManager>) -> Self {
         Self {
-            global: Arc::new(Mutex::new(global)),
-            temp: Arc::new(Mutex::new(MemDataManager::new())),
+            global,
+            temp: Arc::new(MemDataManager::new()),
         }
     }
 }
 
 impl AsDataManager for UnitDataManager {
-    fn divide(&self) -> Arc<dyn AsDataManager> {
-        Arc::new(self.clone())
+    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
+        Arc::new(Self {
+            global: self.global.divide(auth.clone()),
+            temp: self.temp.divide(auth),
+        })
     }
 
     fn append(
@@ -186,23 +205,22 @@ impl AsDataManager for UnitDataManager {
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let temp = this.temp.lock().await;
                 for root in &root_v {
-                    temp.append(
-                        &Path {
-                            root: root.clone(),
-                            step_v: vec![step.clone()],
-                        },
-                        item_v.clone(),
-                    )
-                    .await?;
+                    this.temp
+                        .append(
+                            &Path {
+                                root: root.clone(),
+                                step_v: vec![step.clone()],
+                            },
+                            item_v.clone(),
+                        )
+                        .await?;
                 }
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let global = this.global.lock().await;
                 for root in &root_v {
-                    global
+                    this.global
                         .append(
                             &Path {
                                 root: root.clone(),
@@ -234,23 +252,22 @@ impl AsDataManager for UnitDataManager {
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let temp = this.temp.lock().await;
                 for root in &root_v {
-                    temp.set(
-                        &Path {
-                            root: root.clone(),
-                            step_v: vec![step.clone()],
-                        },
-                        item_v.clone(),
-                    )
-                    .await?;
+                    this.temp
+                        .set(
+                            &Path {
+                                root: root.clone(),
+                                step_v: vec![step.clone()],
+                            },
+                            item_v.clone(),
+                        )
+                        .await?;
                 }
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                let global = this.global.lock().await;
                 for root in &root_v {
-                    global
+                    this.global
                         .set(
                             &Path {
                                 root: root.clone(),
@@ -280,9 +297,7 @@ impl AsDataManager for UnitDataManager {
         Box::pin(async move {
             match path.first_part() {
                 PathPart::Pure(part_path) => {
-                    let global = this.global.lock().await;
-                    let item_v = global.get(&part_path).await?;
-                    drop(global);
+                    let item_v = this.global.get(&part_path).await?;
 
                     let mut rs = Vec::new();
                     for root in item_v {
@@ -298,9 +313,7 @@ impl AsDataManager for UnitDataManager {
                     Ok(rs)
                 }
                 PathPart::Temp(part_path) => {
-                    let temp = this.temp.lock().await;
-                    let item_v = temp.get(&part_path).await?;
-                    drop(temp);
+                    let item_v = this.temp.get(&part_path).await?;
 
                     let mut rs = Vec::new();
                     for root in item_v {
@@ -316,13 +329,11 @@ impl AsDataManager for UnitDataManager {
                     Ok(rs)
                 }
                 PathPart::EntirePure => {
-                    let global = this.global.lock().await;
-                    let item_v = global.get(&path).await?;
+                    let item_v = this.global.get(&path).await?;
                     Ok(item_v)
                 }
                 PathPart::EntireTemp => {
-                    let temp = this.temp.lock().await;
-                    let item_v = temp.get(&path).await?;
+                    let item_v = this.temp.get(&path).await?;
                     Ok(item_v)
                 }
             }
@@ -332,11 +343,8 @@ impl AsDataManager for UnitDataManager {
     fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
         let this = self.clone();
         Box::pin(async move {
-            let temp = this.temp.lock().await;
-            temp.clear().await?;
-            drop(temp);
-            let global = this.global.lock().await;
-            global.clear().await
+            this.temp.clear().await?;
+            this.global.clear().await
         })
     }
 
@@ -353,14 +361,14 @@ struct CachePair {
 
 #[derive(Clone)]
 pub struct RecDataManager {
-    global: Arc<Mutex<UnitDataManager>>,
+    global: Arc<dyn AsDataManager>,
     cache: Arc<Mutex<HashMap<Path, CachePair>>>,
 }
 
 impl RecDataManager {
     pub fn new(global: Arc<dyn AsDataManager>) -> Self {
         Self {
-            global: Arc::new(Mutex::new(UnitDataManager::new(global))),
+            global: Arc::new(UnitDataManager::new(global)),
             cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -368,7 +376,7 @@ impl RecDataManager {
     async fn prune_cache_on_write(
         cache: &mut HashMap<Path, CachePair>,
         n_path: &Path,
-        global: &mut dyn AsDataManager,
+        global: &dyn AsDataManager,
     ) -> io::Result<()> {
         if n_path.step_v.is_empty() {
             return Ok(());
@@ -401,7 +409,7 @@ impl RecDataManager {
     }
 
     async fn prune_cache_on_read(
-        global: &mut dyn AsDataManager,
+        global: &dyn AsDataManager,
         cache: &mut HashMap<Path, CachePair>,
         n_path: &Path,
     ) -> io::Result<()> {
@@ -445,7 +453,7 @@ impl RecDataManager {
     #[async_recursion::async_recursion]
     async fn get_from_other(
         cache: &mut HashMap<Path, CachePair>,
-        global: &mut dyn AsDataManager,
+        global: &dyn AsDataManager,
         path: &Path,
     ) -> io::Result<Vec<String>> {
         if path.step_v.is_empty() {
@@ -481,7 +489,7 @@ impl RecDataManager {
             return Ok(rs);
         }
 
-        Self::prune_cache_on_read(&mut *global, &mut *cache, &path).await?;
+        Self::prune_cache_on_read(global, &mut *cache, &path).await?;
         let item_v = global.get(&path).await?;
         cache.insert(
             path.clone(),
@@ -525,9 +533,9 @@ impl RecDataManager {
 }
 
 impl AsDataManager for RecDataManager {
-    fn divide(&self) -> Arc<dyn AsDataManager> {
+    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
         Arc::new(Self {
-            global: self.global.clone(),
+            global: self.global.divide(auth),
             cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -538,8 +546,7 @@ impl AsDataManager for RecDataManager {
             let mut cache = this.cache.lock().await;
             cache.clear();
             drop(cache);
-            let global = this.global.lock().await;
-            global.clear().await
+            this.global.clear().await
         })
     }
 
@@ -547,7 +554,6 @@ impl AsDataManager for RecDataManager {
         let this = self.clone();
         Box::pin(async move {
             let mut cache = this.cache.lock().await;
-            let mut global = this.global.lock().await;
             let mut temp_cache = cache.clone();
             let mut arr: Vec<Path> = cache.keys().map(|k| k.clone()).collect();
             arr.sort_by(|p, q| p.step_v.len().cmp(&q.step_v.len()));
@@ -556,9 +562,9 @@ impl AsDataManager for RecDataManager {
                 let item_v = &pair.item_v[pair.offset..];
 
                 let step = path.step_v.pop().unwrap();
-                let root_v = Self::get_from_other(&mut temp_cache, &mut *global, &path).await?;
+                let root_v = Self::get_from_other(&mut temp_cache, &*this.global, &path).await?;
                 for source in &root_v {
-                    global
+                    this.global
                         .append(
                             &Path::from_str(&format!("{source}->{}", step.code)),
                             item_v.to_vec(),
@@ -587,15 +593,14 @@ impl AsDataManager for RecDataManager {
         let path = path.clone();
         Box::pin(async move {
             let mut cache = this.cache.lock().await;
-            let mut global = this.global.lock().await;
-            Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
+            Self::prune_cache_on_write(&mut *cache, &path, &*this.global).await?;
 
             if let Some(rs) = cache.get_mut(&path) {
                 rs.item_v.extend(item_v);
                 return Ok(());
             }
 
-            let mut rs0 = global.get(&path).await?;
+            let mut rs0 = this.global.get(&path).await?;
             let offset = rs0.len();
             rs0.extend(item_v);
             cache.insert(
@@ -625,10 +630,9 @@ impl AsDataManager for RecDataManager {
         Box::pin(async move {
             let mut cache = this.cache.lock().await;
 
-            let mut global = this.global.lock().await;
-            Self::prune_cache_on_write(&mut *cache, &path, &mut *global).await?;
+            Self::prune_cache_on_write(&mut *cache, &path, &*this.global).await?;
 
-            global.set(&path, vec![]).await?;
+            this.global.set(&path, vec![]).await?;
             cache.insert(path.clone(), CachePair { item_v, offset: 0 });
             Ok(())
         })
@@ -652,9 +656,8 @@ impl AsDataManager for RecDataManager {
             }
 
             let mut cache = this.cache.lock().await;
-            let mut global = this.global.lock().await;
-            Self::prune_cache_on_read(&mut *global, &mut *cache, &path).await?;
-            let item_v = global.get(&path).await?;
+            Self::prune_cache_on_read(&*this.global, &mut *cache, &path).await?;
+            let item_v = this.global.get(&path).await?;
             cache.insert(
                 path,
                 CachePair {

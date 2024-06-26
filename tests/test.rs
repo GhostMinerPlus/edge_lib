@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use edge_lib::{
-    data::{AsDataManager, MemDataManager, RecDataManager}, util::Path, EdgeEngine, ScriptTree
+    data::{AsDataManager, Auth, MemDataManager, RecDataManager},
+    util::Path,
+    EdgeEngine, ScriptTree,
 };
 
 #[test]
@@ -9,7 +11,10 @@ fn test_listener() {
     let task = async {
         let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
 
-        let mut edge_engine = EdgeEngine::new(dm.divide());
+        let mut edge_engine = EdgeEngine::new(dm.divide(Auth {
+            uid: "root".to_string(),
+            gid_v: Vec::new(),
+        }));
         edge_engine
             .execute1(&ScriptTree {
                 script: [

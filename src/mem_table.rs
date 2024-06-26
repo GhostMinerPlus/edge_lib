@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::data::Auth;
+
 fn insert(mp: &mut BTreeMap<(String, String), BTreeSet<u64>>, k: (String, String), v: u64) {
     if let Some(uuid_v) = mp.get_mut(&k) {
         uuid_v.insert(v);
@@ -22,6 +24,8 @@ pub struct Edge {
     pub source: String,
     pub code: String,
     pub target: String,
+    pub uid: String,
+    pub gid: String,
 }
 
 #[derive(Clone)]
@@ -42,12 +46,14 @@ impl MemTable {
         }
     }
 
-    pub fn insert_edge(&mut self, source: &str, code: &str, target: &str) -> u64 {
+    pub fn insert_edge(&mut self, auth: &Auth, source: &str, code: &str, target: &str) -> u64 {
         let uuid = next_id(&mut self.id);
         let edge = Edge {
             source: source.to_string(),
             code: code.to_string(),
             target: target.to_string(),
+            uid: auth.uid.clone(),
+            gid: auth.uid.clone(),
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -63,14 +69,24 @@ impl MemTable {
         uuid
     }
 
-    pub fn get_target_v(&mut self, source: &str, code: &str) -> Vec<String> {
+    pub fn get_target_v(&mut self, auth: &Auth, source: &str, code: &str) -> Vec<String> {
         if let Some(uuid_v) = self
             .inx_source_code
             .get(&(source.to_string(), code.to_string()))
         {
             let mut arr = Vec::with_capacity(uuid_v.len());
-            for uuid in uuid_v {
-                arr.push(self.edge_mp[uuid].target.clone());
+            if auth.uid == "root" {
+                for uuid in uuid_v {
+                    let edge = &self.edge_mp[uuid];
+                    arr.push(edge.target.clone());
+                }
+            } else {
+                for uuid in uuid_v {
+                    let edge = &self.edge_mp[uuid];
+                    if main::check_common_auth(auth, edge) {
+                        arr.push(edge.target.clone());
+                    }
+                }
             }
             arr
         } else {
@@ -78,14 +94,24 @@ impl MemTable {
         }
     }
 
-    pub fn get_source_v(&mut self, code: &str, target: &str) -> Vec<String> {
+    pub fn get_source_v(&mut self, auth: &Auth, code: &str, target: &str) -> Vec<String> {
         if let Some(uuid_v) = self
             .inx_code_target
             .get(&(code.to_string(), target.to_string()))
         {
             let mut arr = Vec::with_capacity(uuid_v.len());
-            for uuid in uuid_v {
-                arr.push(self.edge_mp[uuid].source.clone());
+            if auth.uid == "root" {
+                for uuid in uuid_v {
+                    let edge = &self.edge_mp[uuid];
+                    arr.push(edge.target.clone());
+                }
+            } else {
+                for uuid in uuid_v {
+                    let edge = &self.edge_mp[uuid];
+                    if main::check_common_auth(auth, edge) {
+                        arr.push(edge.target.clone());
+                    }
+                }
             }
             arr
         } else {
@@ -93,25 +119,79 @@ impl MemTable {
         }
     }
 
-    pub fn delete_edge_with_source_code(&mut self, source: &str, code: &str) {
+    pub fn delete_edge_with_source_code(&mut self, auth: &Auth, source: &str, code: &str) {
         if let Some(uuid_v) = self
             .inx_source_code
             .remove(&(source.to_string(), code.to_string()))
         {
-            for uuid in &uuid_v {
-                let edge = self.edge_mp.remove(uuid).unwrap();
-                self.inx_code_target
-                    .get_mut(&(edge.code, edge.target))
-                    .unwrap()
-                    .remove(uuid);
+            if auth.uid == "root" {
+                for uuid in &uuid_v {
+                    let edge = self.edge_mp.remove(uuid).unwrap();
+                    self.inx_code_target
+                        .get_mut(&(edge.code, edge.target))
+                        .unwrap()
+                        .remove(uuid);
+                }
+            } else {
+                let mut rest_set = BTreeSet::new();
+                for uuid in &uuid_v {
+                    if !main::check_common_auth(auth, &self.edge_mp[uuid]) {
+                        rest_set.insert(*uuid);
+                        continue;
+                    }
+                    let edge = self.edge_mp.remove(uuid).unwrap();
+                    self.inx_code_target
+                        .get_mut(&(edge.code.clone(), edge.target.clone()))
+                        .unwrap()
+                        .remove(uuid);
+                }
+                if !rest_set.is_empty() {
+                    self.inx_source_code
+                        .insert((source.to_string(), code.to_string()), rest_set);
+                }
             }
         }
     }
 
-    pub fn clear(&mut self) {
-        self.id = 0;
-        self.edge_mp.clear();
-        self.inx_source_code.clear();
-        self.inx_code_target.clear();
+    pub fn clear(&mut self, auth: &Auth) {
+        if auth.uid == "root" {
+            self.id = 0;
+            self.edge_mp.clear();
+            self.inx_source_code.clear();
+            self.inx_code_target.clear();
+        } else {
+            let mut new_mp = BTreeMap::new();
+            for (uuid, edge) in &self.edge_mp {
+                if !main::check_common_auth(auth, edge) {
+                    new_mp.insert(*uuid, edge.clone());
+                } else {
+                    self.inx_source_code
+                        .get_mut(&(edge.source.clone(), edge.code.clone()))
+                        .unwrap()
+                        .remove(uuid);
+                    self.inx_code_target
+                        .get_mut(&(edge.code.clone(), edge.target.clone()))
+                        .unwrap()
+                        .remove(uuid);
+                }
+            }
+            self.edge_mp = new_mp;
+        }
+    }
+}
+
+mod main {
+    use crate::data::Auth;
+
+    use super::Edge;
+
+    pub fn check_common_auth(auth: &Auth, edge: &Edge) -> bool {
+        if edge.uid == auth.uid || edge.gid == auth.uid {
+            true
+        } else if auth.gid_v.contains(&edge.gid) {
+            true
+        } else {
+            false
+        }
     }
 }
