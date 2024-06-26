@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{io, sync::Arc};
+use util::escape_word;
 
 use crate::data::AsDataManager;
 
@@ -46,17 +47,23 @@ impl IncValue {
     }
 
     pub fn from_str(s: &str) -> Self {
-        Self::from_string(s.to_string())
+        if s.starts_with('\'') && s.ends_with('\'') && !s.ends_with("\\'") {
+            return Self::Value(escape_word(s));
+        }
+        if s.contains("->") || s.contains("<-") {
+            return Self::Addr(s.to_string());
+        }
+        Self::Value(s.to_string())
     }
 
     pub fn from_string(s: String) -> Self {
         if s.starts_with('\'') && s.ends_with('\'') && !s.ends_with("\\'") {
-            return Self::Value(s);
+            return Self::Value(escape_word(&s));
         }
         if s.contains("->") || s.contains("<-") {
             return Self::Addr(s);
         }
-        return Self::Value(s);
+        Self::Value(s)
     }
 }
 
@@ -125,7 +132,7 @@ mod main {
         data::AsDataManager,
         dep::AsDep,
         func,
-        util::{self, Path},
+        util::Path,
         EdgeEngine, Inc, IncValue, ScriptTree,
     };
 
@@ -232,7 +239,7 @@ mod main {
                     })
                     .await
                     .unwrap();
-                assert!(rs["result"][0].as_str() == Some("'1\\s'"));
+                assert!(rs["result"][0].as_str() == Some("1 "));
             };
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -555,10 +562,10 @@ mod main {
         let mut inc_v = Vec::with_capacity(output_v.len());
         for i in 0..output_v.len() {
             inc_v.push(Inc {
-                output: IncValue::from_string(util::escape_word(&output_v[i])),
-                function: IncValue::from_string(util::escape_word(&function_v[i])),
-                input: IncValue::from_string(util::escape_word(&input_v[i])),
-                input1: IncValue::from_string(util::escape_word(&input1_v[i])),
+                output: IncValue::from_str(&output_v[i]),
+                function: IncValue::from_str(&function_v[i]),
+                input: IncValue::from_str(&input_v[i]),
+                input1: IncValue::from_str(&input1_v[i]),
             });
         }
         Ok(inc_v)
@@ -742,7 +749,7 @@ mod main {
             if target_v.is_empty() {
                 continue;
             }
-            let target = util::escape_word(&target_v[0]);
+            let target = &target_v[0];
             let inc_v = get_inc_v(this.dm.clone(), listener)
                 .await?
                 .into_iter()
