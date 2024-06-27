@@ -13,6 +13,7 @@ fn test_listener() {
 
         let mut edge_engine = EdgeEngine::new(dm.divide(Auth {
             uid: "root".to_string(),
+            gid: "root".to_string(),
             gid_v: Vec::new(),
         }));
         edge_engine

@@ -53,7 +53,7 @@ impl MemTable {
             code: code.to_string(),
             target: target.to_string(),
             uid: auth.uid.clone(),
-            gid: auth.uid.clone(),
+            gid: auth.gid.clone(),
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -187,6 +187,8 @@ mod main {
 
     pub fn check_common_auth(auth: &Auth, edge: &Edge) -> bool {
         if edge.uid == auth.uid || edge.gid == auth.uid {
+            true
+        } else if edge.gid.is_empty() {
             true
         } else if auth.gid_v.contains(&edge.gid) {
             true
