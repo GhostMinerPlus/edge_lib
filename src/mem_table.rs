@@ -53,7 +53,7 @@ impl MemTable {
             code: code.to_string(),
             target: target.to_string(),
             uid: auth.uid.clone(),
-            gid: auth.uid.clone(),
+            gid: auth.gid.clone(),
         };
         self.edge_mp.insert(uuid, edge);
         insert(

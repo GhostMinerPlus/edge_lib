@@ -10,6 +10,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Auth {
     pub uid: String,
+    pub gid: String,
     pub gid_v: Vec<String>,
 }
 
@@ -52,6 +53,7 @@ impl MemDataManager {
         Self {
             auth: Auth {
                 uid: "root".to_string(),
+                gid: "root".to_string(),
                 gid_v: Vec::new(),
             },
             mem_table: Arc::new(Mutex::new(mem_table::MemTable::new())),
