@@ -115,29 +115,31 @@ mod main {
                 step_v: Vec::new(),
             };
         }
-        let mut s = find_arrrow(path).unwrap_or(path.len());
-
+        let s = find_arrrow(path).unwrap_or(path.len());
         let root = path[0..s].to_string();
-        if s == path.len() {
-            return Path {
-                root,
-                step_v: Vec::new(),
-            };
-        }
         let mut tail = &path[s..];
         let mut step_v = Vec::new();
-        loop {
-            s = find_arrrow(&tail[2..]).unwrap_or(tail.len());
+        while !tail.is_empty() {
+            let s = match find_arrrow(&tail[2..]) {
+                Some(s) => s + 2,
+                None => tail.len(),
+            };
             step_v.push(Step {
                 arrow: tail[0..2].to_string(),
                 code: tail[2..s].to_string(),
             });
-            if s == tail.len() {
-                break;
-            }
             tail = &tail[s..];
         }
         Path { root, step_v }
+    }
+
+    #[cfg(test)]
+    mod test_from_str {
+        #[test]
+        fn should_from_str() {
+            let path = super::from_str("$51aae06c-65e9-468a-83b5-041fd52b37fc->$proxy->path");
+            assert_eq!(path.step_v.len(), 2);
+        }
     }
 
     pub fn to_string(this: &Path) -> String {
