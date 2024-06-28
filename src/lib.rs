@@ -129,11 +129,7 @@ mod main {
     use tokio::sync::RwLock;
 
     use crate::{
-        data::AsDataManager,
-        dep::AsDep,
-        func,
-        util::Path,
-        EdgeEngine, Inc, IncValue, ScriptTree,
+        data::AsDataManager, dep::AsDep, func, util::Path, EdgeEngine, Inc, IncValue, ScriptTree,
     };
 
     static mut EDGE_ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> =
@@ -160,8 +156,9 @@ mod main {
         use std::sync::Arc;
 
         use crate::{
-            data::{MemDataManager, RecDataManager},
+            data::{AsDataManager, MemDataManager, RecDataManager},
             main::EDGE_ENGINE_FUNC_MAP_OP,
+            util::Path,
             EdgeEngine, ScriptTree,
         };
 
@@ -191,6 +188,67 @@ mod main {
                 let rs = &rs["root"]["then"];
                 assert_eq!(rs.len(), 100);
                 assert_eq!(rs[0].len(), 200);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_dc() {
+            let task = async {
+                let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new())));
+                let mut edge_engine = EdgeEngine::new(dm.clone());
+                edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "huiwen->canvas = ? _",
+                            "$->$edge = ? _",
+                            "$->$point = ? _",
+                            "$->$point->width = 1 _",
+                            "$->$edge->point = $->$point _",
+                            "$->$point = ? _",
+                            "$->$point->width = 2 _",
+                            "$->$edge->point append $->$edge->point $->$point",
+                            "huiwen->canvas->edge = $->$edge _",
+                            "$->$edge = ? _",
+                            "$->$point = ? _",
+                            "$->$point->width = 1 _",
+                            "$->$edge->point = $->$point _",
+                            "huiwen->canvas->edge append huiwen->canvas->edge $->$edge",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+                let width_v = dm
+                    .get(&Path::from_str("huiwen->canvas->edge->point->width"))
+                    .await
+                    .unwrap();
+                assert_eq!(width_v.len(), 3);
+                let width_v = dm.get(&Path::from_str("1<-width")).await.unwrap();
+                assert_eq!(width_v.len(), 2);
+                edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "huiwen->canvas->edge->point->width = = _ _",
+                            "huiwen->canvas->edge->point = = _ _",
+                            "huiwen->canvas->edge = = _ _",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+                let width_v = dm.get(&Path::from_str("1<-width")).await.unwrap();
+                assert_eq!(width_v.len(), 0);
             };
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
