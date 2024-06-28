@@ -91,6 +91,7 @@ impl AsDataManager for UnitedDataManager {
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
+                log::debug!("set {}->{}: {}\nwhen UnitedDataManager::set", path.to_string(), step.code, root_v.len());
                 for root in &root_v {
                     this.temp
                         .set(
@@ -105,6 +106,7 @@ impl AsDataManager for UnitedDataManager {
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
+                log::debug!("set {}->{}: {}\nwhen UnitedDataManager::set", path.to_string(), step.code, root_v.len());
                 for root in &root_v {
                     this.global
                         .set(
