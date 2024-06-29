@@ -16,13 +16,9 @@ pub struct MemDataManager {
 }
 
 impl MemDataManager {
-    pub fn new() -> Self {
+    pub fn new(auth: Auth) -> Self {
         Self {
-            auth: Auth {
-                uid: "root".to_string(),
-                gid: "root".to_string(),
-                gid_v: Vec::new(),
-            },
+            auth,
             mem_table: Arc::new(Mutex::new(mem_table::MemTable::new())),
         }
     }
@@ -34,6 +30,10 @@ impl AsDataManager for MemDataManager {
             auth,
             mem_table: self.mem_table.clone(),
         })
+    }
+
+    fn get_auth(&self) -> Auth {
+        self.auth.clone()
     }
 
     fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {

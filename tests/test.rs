@@ -9,13 +9,9 @@ use edge_lib::{
 #[test]
 fn test_listener() {
     let task = async {
-        let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+        let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root")))));
 
-        let mut edge_engine = EdgeEngine::new(dm.divide(Auth {
-            uid: "root".to_string(),
-            gid: "root".to_string(),
-            gid_v: Vec::new(),
-        }));
+        let mut edge_engine = EdgeEngine::new(dm.clone());
         edge_engine
             .execute1(&ScriptTree {
                 script: [

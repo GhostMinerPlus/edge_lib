@@ -156,7 +156,7 @@ mod main {
         use std::sync::Arc;
 
         use crate::{
-            data::{AsDataManager, MemDataManager, RecDataManager},
+            data::{AsDataManager, Auth, MemDataManager, RecDataManager},
             main::EDGE_ENGINE_FUNC_MAP_OP,
             util::Path,
             EdgeEngine, ScriptTree,
@@ -165,7 +165,7 @@ mod main {
         #[test]
         fn test() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
                     .execute1(&ScriptTree {
@@ -199,7 +199,7 @@ mod main {
         #[test]
         fn test_dc() {
             let task = async {
-                let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new())));
+                let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root")))));
                 let mut edge_engine = EdgeEngine::new(dm.clone());
                 edge_engine
                     .execute1(&ScriptTree {
@@ -260,7 +260,7 @@ mod main {
         #[test]
         fn test_if() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
                     .execute1(&ScriptTree {
@@ -287,7 +287,7 @@ mod main {
         #[test]
         fn test_space() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
                     .execute1(&ScriptTree {
@@ -309,7 +309,7 @@ mod main {
         #[test]
         fn test_resolve() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
 
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
@@ -342,7 +342,7 @@ mod main {
         #[test]
         fn test_cache() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
 
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 edge_engine
@@ -377,7 +377,7 @@ mod main {
         #[test]
         fn test_func() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new()));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let r_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read() }.await;
                 let sz = r_mp.len();

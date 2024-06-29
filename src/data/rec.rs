@@ -194,6 +194,10 @@ impl RecDataManager {
 }
 
 impl AsDataManager for RecDataManager {
+    fn get_auth(&self) -> Auth {
+        self.global.get_auth()
+    }
+
     fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
         Arc::new(Self {
             global: self.global.divide(auth),

@@ -12,14 +12,19 @@ pub struct UnitedDataManager {
 
 impl UnitedDataManager {
     pub fn new(global: Arc<dyn AsDataManager>) -> Self {
+        let auth = global.get_auth();
         Self {
             global,
-            temp: Arc::new(MemDataManager::new()),
+            temp: Arc::new(MemDataManager::new(auth)),
         }
     }
 }
 
 impl AsDataManager for UnitedDataManager {
+    fn get_auth(&self) -> Auth {
+        self.global.get_auth()
+    }
+
     fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
         Arc::new(Self {
             global: self.global.divide(auth.clone()),
