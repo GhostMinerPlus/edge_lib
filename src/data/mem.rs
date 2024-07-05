@@ -2,10 +2,7 @@ use std::{future, io, pin::Pin, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{
-    mem_table,
-    util::Path,
-};
+use crate::{mem_table, util::Path};
 
 use super::{AsDataManager, Auth};
 
@@ -131,5 +128,36 @@ impl AsDataManager for MemDataManager {
             }
             Ok(rs)
         })
+    }
+}
+
+mod main {
+    #[cfg(test)]
+    mod test_get_source_v {
+        use crate::{
+            data::{AsDataManager, Auth, MemDataManager},
+            util::Path,
+        };
+
+        #[test]
+        fn should_get_source_v() {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let dm = MemDataManager::new(Auth::printer("pen"));
+                    dm.set(&Path::from_str("root->web_server"), vec!["id".to_string()])
+                        .await
+                        .unwrap();
+                    dm.set(&Path::from_str("id->name"), vec!["test".to_string()])
+                        .await
+                        .unwrap();
+                    dm.commit().await.unwrap();
+                    let test = dm.get(&Path::from_str("test<-name")).await.unwrap();
+                    let test1 = dm.get(&Path::from_str("root->web_server")).await.unwrap();
+                    assert_eq!(test, test1);
+                })
+        }
     }
 }

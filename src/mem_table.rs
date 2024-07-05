@@ -112,13 +112,13 @@ impl MemTable {
             if auth.is_root() {
                 for uuid in uuid_v {
                     let edge = &self.edge_mp[uuid];
-                    arr.push(edge.target.clone());
+                    arr.push(edge.source.clone());
                 }
             } else {
                 for uuid in uuid_v {
                     let edge = &self.edge_mp[uuid];
                     if main::check_common_auth(auth, edge) {
-                        arr.push(edge.target.clone());
+                        arr.push(edge.source.clone());
                     }
                 }
             }
