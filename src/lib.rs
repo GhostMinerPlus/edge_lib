@@ -165,7 +165,9 @@ mod main {
         #[test]
         fn test() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                    "root", "root",
+                ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
                     .execute1(&ScriptTree {
@@ -199,7 +201,9 @@ mod main {
         #[test]
         fn test_dc() {
             let task = async {
-                let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root")))));
+                let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new(
+                    Auth::writer("root", "root"),
+                ))));
                 let mut edge_engine = EdgeEngine::new(dm.clone());
                 edge_engine
                     .execute1(&ScriptTree {
@@ -260,7 +264,9 @@ mod main {
         #[test]
         fn test_if() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                    "root", "root",
+                ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
                     .execute1(&ScriptTree {
@@ -287,7 +293,9 @@ mod main {
         #[test]
         fn test_space() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                    "root", "root",
+                ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
                     .execute1(&ScriptTree {
@@ -309,7 +317,9 @@ mod main {
         #[test]
         fn test_resolve() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                    "root", "root",
+                ))));
 
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let rs = edge_engine
@@ -342,7 +352,9 @@ mod main {
         #[test]
         fn test_cache() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                    "root", "root",
+                ))));
 
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 edge_engine
@@ -377,7 +389,9 @@ mod main {
         #[test]
         fn test_func() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer("root", "root"))));
+                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                    "root", "root",
+                ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
                 let r_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read() }.await;
                 let sz = r_mp.len();
@@ -391,6 +405,67 @@ mod main {
                     .await
                     .unwrap();
                 assert_eq!(rs["result"].len(), sz);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_set() {
+            let task = async {
+                let global = Arc::new(MemDataManager::new(Auth::printer("pen")));
+                let dm = Arc::new(RecDataManager::new(global));
+                let mut edge_engine = EdgeEngine::new(dm.clone());
+                edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "$->$server_exists inner root->web_server {name}<-name",
+                            "$->$web_server if $->$server_exists ?",
+                            "$->$web_server->name = {name} _",
+                            "$->$web_server->ip = {ip} _",
+                            "$->$web_server->port = {port} _",
+                            "$->$web_server->path = {path} _",
+                            "$->$web_server left $->$web_server $->$server_exists",
+                            "root->web_server append root->web_server $->$web_server",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+                edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "$->$server_exists inner root->web_server {name}<-name",
+                            "$->$web_server if $->$server_exists ?",
+                            "$->$web_server->name = {name} _",
+                            "$->$web_server->ip = {ip} _",
+                            "$->$web_server->port = {port} _",
+                            "$->$web_server->path = {path} _",
+                            "$->$web_server left $->$web_server $->$server_exists",
+                            "root->web_server append root->web_server $->$web_server",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: ["$->$output = root->web_server->ip _"].join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(rs["result"].len(), 1);
             };
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()

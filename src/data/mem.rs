@@ -159,5 +159,28 @@ mod main {
                     assert_eq!(test, test1);
                 })
         }
+
+        #[test]
+        fn should_get_source() {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    let dm = MemDataManager::new(Auth::printer("pen"));
+                    dm.set(&Path::from_str("root->web_server"), vec!["id".to_string()])
+                        .await
+                        .unwrap();
+                    dm.set(&Path::from_str("id->name"), vec!["test".to_string()])
+                        .await
+                        .unwrap();
+                    dm.set(&Path::from_str("root->web_server->name"), vec!["test".to_string()])
+                        .await
+                        .unwrap();
+                    dm.commit().await.unwrap();
+                    let web_server = dm.get(&Path::from_str("root->web_server->name")).await.unwrap();
+                    assert_eq!(web_server.len(), 1);
+                })
+        }
     }
 }

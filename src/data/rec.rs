@@ -38,27 +38,30 @@ impl RecDataManager {
         let path_v: Vec<Path> = cache.keys().cloned().collect();
         let code = &n_path.step_v.last().unwrap().code;
         for path in &path_v {
-            if path == n_path {
+            if path == n_path || !path.contains(code) {
                 continue;
             }
-            if path.step_v.iter().filter(|step| step.code == *code).count() > 0 {
-                let pair = cache.remove(path).unwrap();
-                if let Some(l_step) = path.step_v.last() {
-                    if l_step.arrow != "->" {
-                        continue;
-                    }
-                }
-                let item_v = &pair.item_v[pair.offset..];
-                if item_v.is_empty() {
+            let pair = cache.remove(path).unwrap();
+            if let Some(l_step) = path.step_v.last() {
+                if l_step.arrow != "->" {
                     continue;
                 }
-
-                let mut path = path.clone();
-                let step = path.step_v.pop().unwrap();
-                let root_v = Self::get_from_other(&mut temp_cache, global, &path).await?;
-                for source in &root_v {
+            }
+            let item_v = &pair.item_v[pair.offset..];
+            let mut path = path.clone();
+            let step = path.step_v.pop().unwrap();
+            let root_v = Self::get_from_other(&mut temp_cache, global, &path).await?;
+            for source in &root_v {
+                if pair.offset > 0 {
                     global
                         .append(
+                            &Path::from_str(&format!("{source}->{}", step.code)),
+                            item_v.to_vec(),
+                        )
+                        .await?;
+                } else {
+                    global
+                        .set(
                             &Path::from_str(&format!("{source}->{}", step.code)),
                             item_v.to_vec(),
                         )
