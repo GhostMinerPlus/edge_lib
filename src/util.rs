@@ -48,6 +48,7 @@ impl Path {
         main::first_part(self)
     }
 
+    /// step_v 中是否包含 code
     pub fn contains(&self, code: &str) -> bool {
         main::contains(self, code)
     }

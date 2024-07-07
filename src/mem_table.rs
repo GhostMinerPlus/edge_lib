@@ -47,6 +47,7 @@ impl MemTable {
     }
 
     pub fn insert_edge(&mut self, auth: &Auth, source: &str, code: &str, target: &str) -> u64 {
+        log::debug!("insert edge: {source}->{code}->{target}");
         let uuid = next_id(&mut self.id);
         let edge = match auth.clone() {
             Auth::Writer(paper, pen) => Edge {

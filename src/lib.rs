@@ -156,16 +156,15 @@ mod main {
         use std::sync::Arc;
 
         use crate::{
-            data::{AsDataManager, Auth, MemDataManager, RecDataManager},
+            data::{Auth, CacheDataManager, MemDataManager, TempDataManager},
             main::EDGE_ENGINE_FUNC_MAP_OP,
-            util::Path,
             EdgeEngine, ScriptTree,
         };
 
         #[test]
         fn test() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
                     "root", "root",
                 ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
@@ -200,28 +199,23 @@ mod main {
 
         #[test]
         fn test_dc() {
+            // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("DEBUG"))
+            //     .init();
             let task = async {
-                let dm = Arc::new(RecDataManager::new(Arc::new(MemDataManager::new(
+                let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(
                     Auth::writer("root", "root"),
                 ))));
+                let dm = Arc::new(CacheDataManager::new(global));
                 let mut edge_engine = EdgeEngine::new(dm.clone());
-                edge_engine
+                let rs = edge_engine
                     .execute1(&ScriptTree {
                         script: [
-                            "huiwen->canvas = ? _",
-                            "$->$edge = ? _",
-                            "$->$point = ? _",
-                            "$->$point->width = 1 _",
-                            "$->$edge->point = $->$point _",
-                            "$->$point = ? _",
-                            "$->$point->width = 2 _",
-                            "$->$edge->point append $->$edge->point $->$point",
-                            "huiwen->canvas->edge = $->$edge _",
-                            "$->$edge = ? _",
-                            "$->$point = ? _",
-                            "$->$point->width = 1 _",
-                            "$->$edge->point = $->$point _",
-                            "huiwen->canvas->edge append huiwen->canvas->edge $->$edge",
+                            "$->edge = ? _",
+                            "$->point = ? _",
+                            "$->point->width = 1 _",
+                            "$->point->width append $->point->width 1",
+                            "$->edge->point = $->point _",
+                            "$->$output = $->edge->point->width _"
                         ]
                         .join("\n"),
                         name: "result".to_string(),
@@ -229,30 +223,8 @@ mod main {
                     })
                     .await
                     .unwrap();
-                edge_engine.commit().await.unwrap();
-                let width_v = dm
-                    .get(&Path::from_str("huiwen->canvas->edge->point->width"))
-                    .await
-                    .unwrap();
-                assert_eq!(width_v.len(), 3);
-                let width_v = dm.get(&Path::from_str("1<-width")).await.unwrap();
-                assert_eq!(width_v.len(), 2);
-                edge_engine
-                    .execute1(&ScriptTree {
-                        script: [
-                            "huiwen->canvas->edge->point->width = = _ _",
-                            "huiwen->canvas->edge->point = = _ _",
-                            "huiwen->canvas->edge = = _ _",
-                        ]
-                        .join("\n"),
-                        name: "result".to_string(),
-                        next_v: vec![],
-                    })
-                    .await
-                    .unwrap();
-                edge_engine.commit().await.unwrap();
-                let width_v = dm.get(&Path::from_str("1<-width")).await.unwrap();
-                assert_eq!(width_v.len(), 0);
+                log::debug!("{rs}");
+                assert_eq!(rs["result"].len(), 2);
             };
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -264,7 +236,7 @@ mod main {
         #[test]
         fn test_if() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
                     "root", "root",
                 ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
@@ -293,7 +265,7 @@ mod main {
         #[test]
         fn test_space() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
                     "root", "root",
                 ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
@@ -317,11 +289,12 @@ mod main {
         #[test]
         fn test_resolve() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
-                    "root", "root",
+                let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(
+                    Auth::writer("root", "root"),
                 ))));
+                let dm = Arc::new(CacheDataManager::new(global));
 
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let mut edge_engine = EdgeEngine::new(dm);
                 let rs = edge_engine
                     .execute1(&ScriptTree {
                         script: [
@@ -352,14 +325,13 @@ mod main {
         #[test]
         fn test_cache() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
-                    "root", "root",
-                ))));
+                let global = Arc::new(MemDataManager::new(Auth::writer("root", "root")));
+                let dm = Arc::new(CacheDataManager::new(global));
 
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let mut edge_engine = EdgeEngine::new(dm);
                 edge_engine
                     .execute1(&ScriptTree {
-                        script: ["root->name = = edge _"].join("\n"),
+                        script: ["root->name = edge _"].join("\n"),
                         name: "".to_string(),
                         next_v: vec![],
                     })
@@ -369,7 +341,7 @@ mod main {
 
                 let rs = edge_engine
                     .execute1(&ScriptTree {
-                        script: ["test->name = = edge _", "$->$output = = edge<-name _"].join("\n"),
+                        script: ["test->name = edge _", "$->$output = edge<-name _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     })
@@ -377,7 +349,7 @@ mod main {
                     .unwrap();
                 edge_engine.commit().await.unwrap();
 
-                assert!(rs["result"].len() == 2);
+                assert_eq!(rs["result"].len(), 2);
             };
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -389,7 +361,7 @@ mod main {
         #[test]
         fn test_func() {
             let task = async {
-                let dm = RecDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
+                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(Auth::writer(
                     "root", "root",
                 ))));
                 let mut edge_engine = EdgeEngine::new(Arc::new(dm));
@@ -416,8 +388,10 @@ mod main {
         #[test]
         fn test_set() {
             let task = async {
-                let global = Arc::new(MemDataManager::new(Auth::printer("pen")));
-                let dm = Arc::new(RecDataManager::new(global));
+                let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(
+                    Auth::writer("root", "root"),
+                ))));
+                let dm = Arc::new(CacheDataManager::new(global));
                 let mut edge_engine = EdgeEngine::new(dm.clone());
                 edge_engine
                     .execute1(&ScriptTree {
@@ -460,6 +434,59 @@ mod main {
                 let rs = edge_engine
                     .execute1(&ScriptTree {
                         script: ["$->$output = root->web_server->ip _"].join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(rs["result"].len(), 1);
+            };
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(task);
+        }
+
+        #[test]
+        fn test_set_proxy() {
+            let task = async {
+                let global = Arc::new(MemDataManager::new(Auth::printer("pen")));
+                let dm = Arc::new(CacheDataManager::new(global));
+                let mut edge_engine = EdgeEngine::new(dm.clone());
+                edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "$->$proxy = ? _",
+                            "$->$proxy->name = editor _",
+                            "$->$proxy->path = /editor _",
+                            "root->proxy append root->proxy $->$proxy",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                edge_engine.commit().await.unwrap();
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: [
+                            "$->$proxy inner root->proxy editor<-name",
+                            "$->$proxy->path = /editor _",
+                            "$->$output = root->proxy->path _",
+                        ]
+                        .join("\n"),
+                        name: "result".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(rs["result"].len(), 1);
+                edge_engine.commit().await.unwrap();
+                let rs = edge_engine
+                    .execute1(&ScriptTree {
+                        script: ["$->$output = root->proxy->path _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     })

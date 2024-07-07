@@ -5,12 +5,12 @@ use crate::util::{Path, PathPart};
 use super::{AsDataManager, Auth, MemDataManager};
 
 #[derive(Clone)]
-pub struct UnitedDataManager {
+pub struct TempDataManager {
     global: Arc<dyn AsDataManager>,
     temp: Arc<dyn AsDataManager>,
 }
 
-impl UnitedDataManager {
+impl TempDataManager {
     pub fn new(global: Arc<dyn AsDataManager>) -> Self {
         let auth = global.get_auth();
         Self {
@@ -20,7 +20,7 @@ impl UnitedDataManager {
     }
 }
 
-impl AsDataManager for UnitedDataManager {
+impl AsDataManager for TempDataManager {
     fn get_auth(&self) -> Auth {
         self.global.get_auth()
     }
@@ -195,6 +195,10 @@ impl AsDataManager for UnitedDataManager {
     }
 
     fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        Box::pin(future::ready(Ok(())))
+        let this = self.clone();
+        Box::pin(async move {
+            this.temp.clear().await?;
+            this.global.commit().await
+        })
     }
 }
