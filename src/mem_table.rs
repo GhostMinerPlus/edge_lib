@@ -24,8 +24,8 @@ pub struct Edge {
     pub source: String,
     pub code: String,
     pub target: String,
-    pub uid: String,
-    pub gid: String,
+    pub paper: String,
+    pub pen: String,
 }
 
 #[derive(Clone)]
@@ -47,13 +47,23 @@ impl MemTable {
     }
 
     pub fn insert_edge(&mut self, auth: &Auth, source: &str, code: &str, target: &str) -> u64 {
+        log::debug!("insert edge: {source}->{code}->{target}");
         let uuid = next_id(&mut self.id);
-        let edge = Edge {
-            source: source.to_string(),
-            code: code.to_string(),
-            target: target.to_string(),
-            uid: auth.uid.clone(),
-            gid: auth.gid.clone(),
+        let edge = match auth.clone() {
+            Auth::Writer(paper, pen) => Edge {
+                source: source.to_string(),
+                code: code.to_string(),
+                target: target.to_string(),
+                paper,
+                pen,
+            },
+            Auth::Printer(pen) => Edge {
+                source: source.to_string(),
+                code: code.to_string(),
+                target: target.to_string(),
+                paper: pen.clone(),
+                pen,
+            },
         };
         self.edge_mp.insert(uuid, edge);
         insert(
@@ -75,7 +85,7 @@ impl MemTable {
             .get(&(source.to_string(), code.to_string()))
         {
             let mut arr = Vec::with_capacity(uuid_v.len());
-            if auth.uid == "root" {
+            if auth.is_root() {
                 for uuid in uuid_v {
                     let edge = &self.edge_mp[uuid];
                     arr.push(edge.target.clone());
@@ -100,16 +110,16 @@ impl MemTable {
             .get(&(code.to_string(), target.to_string()))
         {
             let mut arr = Vec::with_capacity(uuid_v.len());
-            if auth.uid == "root" {
+            if auth.is_root() {
                 for uuid in uuid_v {
                     let edge = &self.edge_mp[uuid];
-                    arr.push(edge.target.clone());
+                    arr.push(edge.source.clone());
                 }
             } else {
                 for uuid in uuid_v {
                     let edge = &self.edge_mp[uuid];
                     if main::check_common_auth(auth, edge) {
-                        arr.push(edge.target.clone());
+                        arr.push(edge.source.clone());
                     }
                 }
             }
@@ -124,7 +134,7 @@ impl MemTable {
             .inx_source_code
             .remove(&(source.to_string(), code.to_string()))
         {
-            if auth.uid == "root" {
+            if auth.is_root() {
                 for uuid in &uuid_v {
                     let edge = self.edge_mp.remove(uuid).unwrap();
                     self.inx_code_target
@@ -154,7 +164,7 @@ impl MemTable {
     }
 
     pub fn clear(&mut self, auth: &Auth) {
-        if auth.uid == "root" {
+        if auth.is_root() {
             self.id = 0;
             self.edge_mp.clear();
             self.inx_source_code.clear();
@@ -186,14 +196,9 @@ mod main {
     use super::Edge;
 
     pub fn check_common_auth(auth: &Auth, edge: &Edge) -> bool {
-        if edge.uid == auth.uid || edge.gid == auth.uid {
-            true
-        } else if edge.gid.is_empty() {
-            true
-        } else if auth.gid_v.contains(&edge.gid) {
-            true
-        } else {
-            false
+        match auth {
+            Auth::Writer(paper, _) => edge.paper == *paper,
+            Auth::Printer(pen) => edge.pen == *pen,
         }
     }
 }

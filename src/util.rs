@@ -47,6 +47,11 @@ impl Path {
     pub fn first_part(&self) -> PathPart {
         main::first_part(self)
     }
+
+    /// step_v 中是否包含 code
+    pub fn contains(&self, code: &str) -> bool {
+        main::contains(self, code)
+    }
 }
 
 impl std::fmt::Display for Path {
@@ -60,6 +65,15 @@ mod main {
 
     pub fn fmt(this: &Path, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", to_string(this))
+    }
+
+    pub fn contains(this: &Path, code: &str) -> bool {
+        for step in &this.step_v {
+            if step.code == code {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn escape_word(mut word: &str) -> String {
