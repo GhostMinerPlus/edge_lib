@@ -1,42 +1,21 @@
-mod mem;
-mod cache;
-mod temp;
-
-use std::{io, pin::Pin, sync::Arc};
+use std::{collections::HashSet, io, pin::Pin, sync::Arc};
 
 use crate::util::Path;
 
-pub use mem::*;
+mod cache;
+mod mem;
+mod temp;
+
 pub use cache::*;
+pub use mem::*;
 pub use temp::*;
 
-#[derive(Clone)]
-pub enum Auth {
-    Writer(String, String),
-    Printer(String),
-}
-
-impl Auth {
-    pub fn is_root(&self) -> bool {
-        match self {
-            Self::Writer(paper, _) => paper == "root",
-            Self::Printer(pen) => pen == "root",
-        }
-    }
-
-    pub fn printer(pen: &str) -> Self {
-        Self::Printer(pen.to_string())
-    }
-
-    pub fn writer(paper: &str, pen: &str) -> Self {
-        Self::Writer(paper.to_string(), pen.to_string())
-    }
-}
+pub type Auth = Option<HashSet<String>>;
 
 pub trait AsDataManager: Send + Sync {
     fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager>;
 
-    fn get_auth(&self) -> Auth;
+    fn get_auth(&self) -> &Auth;
 
     /// Get all targets from `source->code`
     fn append(

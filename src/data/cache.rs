@@ -6,6 +6,31 @@ use crate::util::Path;
 
 use super::{AsDataManager, Auth};
 
+mod main {
+    use std::{collections::HashMap, io};
+
+    use crate::util::Path;
+
+    pub fn prune_cache_before_write(
+        cache: &mut HashMap<Path, Vec<String>>,
+        w_path: &Path,
+    ) -> io::Result<()> {
+        if w_path.step_v.is_empty() {
+            return Ok(());
+        }
+        let path_v: Vec<Path> = cache.keys().cloned().collect();
+        let code = &w_path.step_v.last().unwrap().code;
+        for path in &path_v {
+            if path == w_path || !path.contains(code) {
+                // 同路径和与 code 无关的路径缓存仍有效
+                continue;
+            }
+            cache.remove(path).unwrap();
+        }
+        Ok(())
+    }
+}
+
 /// DataManager with cache and temp
 #[derive(Clone)]
 pub struct CacheDataManager {
@@ -23,7 +48,7 @@ impl CacheDataManager {
 }
 
 impl AsDataManager for CacheDataManager {
-    fn get_auth(&self) -> Auth {
+    fn get_auth(&self) -> &Auth {
         self.global.get_auth()
     }
 
@@ -123,30 +148,5 @@ impl AsDataManager for CacheDataManager {
             cache.clear();
             Ok(())
         })
-    }
-}
-
-mod main {
-    use std::{collections::HashMap, io};
-
-    use crate::util::Path;
-
-    pub fn prune_cache_before_write(
-        cache: &mut HashMap<Path, Vec<String>>,
-        w_path: &Path,
-    ) -> io::Result<()> {
-        if w_path.step_v.is_empty() {
-            return Ok(());
-        }
-        let path_v: Vec<Path> = cache.keys().cloned().collect();
-        let code = &w_path.step_v.last().unwrap().code;
-        for path in &path_v {
-            if path == w_path || !path.contains(code) {
-                // 同路径和与 code 无关的路径缓存仍有效
-                continue;
-            }
-            cache.remove(path).unwrap();
-        }
-        Ok(())
     }
 }

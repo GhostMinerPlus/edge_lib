@@ -12,7 +12,7 @@ pub struct TempDataManager {
 
 impl TempDataManager {
     pub fn new(global: Arc<dyn AsDataManager>) -> Self {
-        let auth = global.get_auth();
+        let auth = global.get_auth().clone();
         Self {
             global,
             temp: Arc::new(MemDataManager::new(auth)),
@@ -21,7 +21,7 @@ impl TempDataManager {
 }
 
 impl AsDataManager for TempDataManager {
-    fn get_auth(&self) -> Auth {
+    fn get_auth(&self) -> &Auth {
         self.global.get_auth()
     }
 
@@ -96,7 +96,12 @@ impl AsDataManager for TempDataManager {
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                log::debug!("set {}->{}: {}\nwhen UnitedDataManager::set", path.to_string(), step.code, root_v.len());
+                log::debug!(
+                    "set {}->{}: {}\nwhen UnitedDataManager::set",
+                    path.to_string(),
+                    step.code,
+                    root_v.len()
+                );
                 for root in &root_v {
                     this.temp
                         .set(
@@ -111,7 +116,12 @@ impl AsDataManager for TempDataManager {
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = this.get(&path).await?;
-                log::debug!("set {}->{}: {}\nwhen UnitedDataManager::set", path.to_string(), step.code, root_v.len());
+                log::debug!(
+                    "set {}->{}: {}\nwhen UnitedDataManager::set",
+                    path.to_string(),
+                    step.code,
+                    root_v.len()
+                );
                 for root in &root_v {
                     this.global
                         .set(
