@@ -3,6 +3,7 @@ use std::{io, sync::Arc};
 
 use crate::data::AsDataManager;
 use crate::func;
+use crate::util::Path;
 
 mod dep {
     use std::{
@@ -373,8 +374,8 @@ mod main {
         #[test]
         fn test() {
             let task = async {
-                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(None)));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
+                let mut edge_engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -413,7 +414,7 @@ mod main {
             let task = async {
                 let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(None))));
                 let dm = Arc::new(CacheDataManager::new(global));
-                let mut edge_engine = EdgeEngine::new(dm.clone());
+                let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
                 let rs = main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -445,8 +446,8 @@ mod main {
         #[test]
         fn test_if() {
             let task = async {
-                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(None)));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
+                let mut edge_engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -474,8 +475,8 @@ mod main {
         #[test]
         fn test_space() {
             let task = async {
-                let dm = CacheDataManager::new(Arc::new(MemDataManager::new(None)));
-                let mut edge_engine = EdgeEngine::new(Arc::new(dm));
+                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
+                let mut edge_engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -501,7 +502,7 @@ mod main {
                 let global = Arc::new(MemDataManager::new(None));
                 let dm = Arc::new(CacheDataManager::new(global));
 
-                let mut edge_engine = EdgeEngine::new(dm);
+                let mut edge_engine = EdgeEngine::new(dm, "root").await;
                 main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -540,7 +541,7 @@ mod main {
             let task = async {
                 let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(None))));
                 let dm = Arc::new(CacheDataManager::new(global));
-                let mut edge_engine = EdgeEngine::new(dm.clone());
+                let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
                 main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -607,7 +608,7 @@ mod main {
             let task = async {
                 let global = Arc::new(MemDataManager::new(None));
                 let dm = Arc::new(CacheDataManager::new(global));
-                let mut edge_engine = EdgeEngine::new(dm.clone());
+                let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
                 main::execute1::<Dep>(
                     &mut edge_engine,
                     &ScriptTree {
@@ -711,8 +712,16 @@ pub struct EdgeEngine {
 }
 
 impl EdgeEngine {
-    pub fn new(dm: Arc<dyn AsDataManager>) -> Self {
-        main::new_edge_engine::<dep::Dep>(dm)
+    pub async fn new(dm: Arc<dyn AsDataManager>, writer: &str) -> Self {
+        if writer == "root" {
+            main::new_edge_engine::<dep::Dep>(dm.divide(None))
+        } else {
+            let paper_v = dm
+                .get(&Path::from_str(&format!("{writer}->edge:paper")))
+                .await
+                .unwrap();
+            main::new_edge_engine::<dep::Dep>(dm.divide(Some(paper_v.into_iter().collect())))
+        }
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
