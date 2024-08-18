@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::{io, sync::Arc};
 
 use crate::data::AsDataManager;
@@ -724,7 +725,9 @@ impl EdgeEngine {
                 .get(&Path::from_str(&format!("{writer}->paper->name")))
                 .await
                 .unwrap();
-            dm.divide(Some(paper_v.into_iter().collect()))
+            let mut paper_set = paper_v.into_iter().collect::<HashSet<String>>();
+            paper_set.insert("$".to_string());
+            dm.divide(Some(paper_set))
         };
         main::new_edge_engine::<dep::Dep>(dm)
     }
