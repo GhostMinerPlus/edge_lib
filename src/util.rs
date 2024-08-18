@@ -1,65 +1,3 @@
-pub fn escape_word(word: &str) -> String {
-    main::escape_word(word)
-}
-
-pub enum PathType {
-    Pure,
-    Temp,
-    Mixed,
-}
-
-pub enum PathPart {
-    Pure(Path),
-    Temp(Path),
-    EntirePure,
-    EntireTemp,
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct Step {
-    pub arrow: String,
-    pub code: String,
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct Path {
-    pub root: String,
-    pub step_v: Vec<Step>,
-}
-
-impl Path {
-    pub fn from_str(path: &str) -> Self {
-        main::from_str(path)
-    }
-
-    pub fn to_string(&self) -> String {
-        main::to_string(self)
-    }
-
-    pub fn is_temp(&self) -> bool {
-        main::is_temp(self)
-    }
-
-    pub fn path_type(&self) -> PathType {
-        main::path_type(self)
-    }
-
-    pub fn first_part(&self) -> PathPart {
-        main::first_part(self)
-    }
-
-    /// step_v 中是否包含 code
-    pub fn contains(&self, code: &str) -> bool {
-        main::contains(self, code)
-    }
-}
-
-impl std::fmt::Display for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        main::fmt(self, f)
-    }
-}
-
 mod main {
     use super::{Path, PathPart, PathType, Step};
 
@@ -138,9 +76,20 @@ mod main {
                 Some(s) => s + 2,
                 None => tail.len(),
             };
+            let (paper, code) = {
+                let pair = tail[2..s].split(':').collect::<Vec<&str>>();
+                if pair.len() >= 2 {
+                    (pair[0].to_string(), pair[1].to_string())
+                } else if pair.len() == 1 {
+                    (String::new(), pair[0].to_string())
+                } else {
+                    (String::new(), String::new())
+                }
+            };
             step_v.push(Step {
                 arrow: tail[0..2].to_string(),
-                code: tail[2..s].to_string(),
+                paper,
+                code,
             });
             tail = &tail[s..];
         }
@@ -151,7 +100,7 @@ mod main {
     mod test_from_str {
         #[test]
         fn should_from_str() {
-            let path = super::from_str("$51aae06c-65e9-468a-83b5-041fd52b37fc->$proxy->path");
+            let path = super::from_str("$51aae06c-65e9-468a-83b5-041fd52b37fc->$:proxy->path");
             assert_eq!(path.step_v.len(), 2);
         }
     }
@@ -168,13 +117,13 @@ mod main {
         if this.step_v.is_empty() {
             return false;
         }
-        this.step_v.last().unwrap().code.starts_with('$')
+        this.step_v.last().unwrap().paper == "$"
     }
 
     pub fn path_type(this: &Path) -> PathType {
         let mut cnt = 0;
         for i in 0..this.step_v.len() {
-            if this.step_v[i].code.starts_with('$') {
+            if this.step_v[i].paper == "$" {
                 cnt += 1;
             }
         }
@@ -192,10 +141,10 @@ mod main {
             return PathPart::EntirePure;
         }
         let first_step = &this.step_v[0];
-        if first_step.code.starts_with('$') {
+        if first_step.paper == "$" {
             let mut end = 1;
             for i in 1..this.step_v.len() {
-                if !this.step_v[i].code.starts_with('$') {
+                if this.step_v[i].paper != "$" {
                     break;
                 }
                 end += 1;
@@ -210,7 +159,7 @@ mod main {
         } else {
             let mut end = 1;
             for i in 1..this.step_v.len() {
-                if this.step_v[i].code.starts_with('$') {
+                if this.step_v[i].paper == "$" {
                     break;
                 }
                 end += 1;
@@ -272,5 +221,69 @@ mod main {
             return find_arrrow_in_block(path, pos);
         }
         find_arrrow_in_pure(path)
+    }
+}
+
+pub fn escape_word(word: &str) -> String {
+    main::escape_word(word)
+}
+
+pub enum PathType {
+    Pure,
+    Temp,
+    Mixed,
+}
+
+pub enum PathPart {
+    Pure(Path),
+    Temp(Path),
+    EntirePure,
+    EntireTemp,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct Step {
+    pub arrow: String,
+    pub paper: String,
+    pub code: String,
+}
+
+/// root->paper:code, root->paper:code, root->paper:code
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct Path {
+    pub root: String,
+    pub step_v: Vec<Step>,
+}
+
+impl Path {
+    pub fn from_str(path: &str) -> Self {
+        main::from_str(path)
+    }
+
+    pub fn to_string(&self) -> String {
+        main::to_string(self)
+    }
+
+    pub fn is_temp(&self) -> bool {
+        main::is_temp(self)
+    }
+
+    pub fn path_type(&self) -> PathType {
+        main::path_type(self)
+    }
+
+    pub fn first_part(&self) -> PathPart {
+        main::first_part(self)
+    }
+
+    /// step_v 中是否包含 code
+    pub fn contains(&self, code: &str) -> bool {
+        main::contains(self, code)
+    }
+}
+
+impl std::fmt::Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        main::fmt(self, f)
     }
 }
