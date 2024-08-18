@@ -190,7 +190,7 @@ impl AsDataManager for MemDataManager {
             while !path.step_v.is_empty() {
                 let step = path.step_v.remove(0);
                 if let Some(auth) = &this.auth {
-                    if !step.paper.is_empty() && !auth.contains(&step.paper) {
+                    if !auth.contains(&step.paper) {
                         return Err(io::Error::other("permision denied"));
                     }
                 }

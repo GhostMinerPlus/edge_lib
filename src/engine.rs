@@ -712,16 +712,21 @@ pub struct EdgeEngine {
 }
 
 impl EdgeEngine {
+    /// New edge engine
+    /// # Parameters
+    /// - dm: data manager in root
+    /// - writer: writer
     pub async fn new(dm: Arc<dyn AsDataManager>, writer: &str) -> Self {
-        if writer == "root" {
-            main::new_edge_engine::<dep::Dep>(dm.divide(None))
+        let dm = if writer == "root" {
+            dm
         } else {
             let paper_v = dm
-                .get(&Path::from_str(&format!("{writer}->edge:paper")))
+                .get(&Path::from_str(&format!("{writer}->paper->name")))
                 .await
                 .unwrap();
-            main::new_edge_engine::<dep::Dep>(dm.divide(Some(paper_v.into_iter().collect())))
-        }
+            dm.divide(Some(paper_v.into_iter().collect()))
+        };
+        main::new_edge_engine::<dep::Dep>(dm)
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
