@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::{io, sync::Arc};
 
-use crate::data::AsDataManager;
-use crate::func;
-use crate::util::Path;
+use crate::{data::AsDataManager, func, util::Path};
 
 mod dep {
     use std::{
@@ -17,7 +15,7 @@ mod dep {
 
     use super::{
         inc::{Inc, IncValue},
-        EdgeEngine, ScriptTree,
+        EdgeEngine, ScriptTree, ScriptTree1,
     };
     use crate::{data::AsDataManager, func, util::Path};
 
@@ -54,6 +52,39 @@ mod dep {
                 )
                 .await?;
             let inc_v = Self::parse_script(&script_tree.script)?;
+            let rs = Self::invoke_inc_v(this, &root, &inc_v).await?;
+            if script_tree.next_v.is_empty() {
+                let _ = out_tree.insert(&script_tree.name, rs);
+                return Ok(());
+            }
+            let mut cur = json::object! {};
+            for next_tree in &script_tree.next_v {
+                // fork
+                for input in &rs {
+                    let mut sub_out_tree = json::object! {};
+                    Self::inner_execute(this, input, next_tree, &mut sub_out_tree).await?;
+                    Self::merge(&mut cur, &mut sub_out_tree);
+                }
+            }
+            let _ = out_tree.insert(&script_tree.name, cur);
+            Ok(())
+        }
+
+        #[async_recursion::async_recursion]
+        async fn inner_execute1(
+            this: &EdgeEngine,
+            input: &str,
+            script_tree: &ScriptTree1,
+            out_tree: &mut json::JsonValue,
+        ) -> io::Result<()> {
+            let root = Self::gen_root();
+            this.dm
+                .append(
+                    &Path::from_str(&format!("{root}->$:input")),
+                    vec![input.to_string()],
+                )
+                .await?;
+            let inc_v = Self::parse_script1(&script_tree.script)?;
             let rs = Self::invoke_inc_v(this, &root, &inc_v).await?;
             if script_tree.next_v.is_empty() {
                 let _ = out_tree.insert(&script_tree.name, rs);
@@ -121,6 +152,55 @@ mod dep {
         fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
             let mut inc_v = Vec::new();
             for line in script.lines() {
+                if line.is_empty() {
+                    continue;
+                }
+
+                let word_v: Vec<&str> = line.split(' ').collect();
+                if word_v.len() < 4 {
+                    return Err(io::Error::other(
+                        "when parse_script:\n\tless than 4 words in a line",
+                    ));
+                }
+                if word_v.len() == 5 {
+                    if word_v[1] == "=" {
+                        inc_v.push(Inc {
+                            output: IncValue::from_str(word_v[0].trim()),
+                            function: IncValue::from_str(word_v[2].trim()),
+                            input: IncValue::from_str(word_v[3].trim()),
+                            input1: IncValue::from_str(word_v[4].trim()),
+                        });
+                    } else if word_v[1] == "+=" {
+                        inc_v.push(Inc {
+                            output: IncValue::from_str("$->$:temp"),
+                            function: IncValue::from_str(word_v[2].trim()),
+                            input: IncValue::from_str(word_v[3].trim()),
+                            input1: IncValue::from_str(word_v[4].trim()),
+                        });
+                        inc_v.push(Inc {
+                            output: IncValue::from_str(word_v[0].trim()),
+                            function: IncValue::from_str("append"),
+                            input: IncValue::from_str(word_v[0].trim()),
+                            input1: IncValue::from_str("$->$:temp"),
+                        });
+                    } else {
+                        return Err(io::Error::other("when parse_script:\n\tunknown operator"));
+                    }
+                    continue;
+                }
+                inc_v.push(Inc {
+                    output: IncValue::from_str(word_v[0].trim()),
+                    function: IncValue::from_str(word_v[1].trim()),
+                    input: IncValue::from_str(word_v[2].trim()),
+                    input1: IncValue::from_str(word_v[3].trim()),
+                });
+            }
+            Ok(inc_v)
+        }
+
+        fn parse_script1(script: &[String]) -> io::Result<Vec<Inc>> {
+            let mut inc_v = Vec::new();
+            for line in script {
                 if line.is_empty() {
                     continue;
                 }
@@ -341,12 +421,13 @@ mod dep {
         }
     }
 }
+
 mod main {
     use std::{io, sync::Arc};
 
     use crate::{data::AsDataManager, func};
 
-    use super::{dep::AsDep, EdgeEngine, ScriptTree};
+    use super::{dep::AsDep, EdgeEngine, ScriptTree, ScriptTree1};
 
     pub fn new_edge_engine<D: AsDep>(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
         D::lazy_mp();
@@ -664,6 +745,16 @@ mod main {
         }
     }
 
+    /// 执行脚本树
+    pub async fn execute2<D: AsDep>(
+        this: &mut EdgeEngine,
+        script_tree: &ScriptTree1,
+    ) -> io::Result<json::JsonValue> {
+        let mut out_tree = json::object! {};
+        D::inner_execute1(this, "", &script_tree, &mut out_tree).await?;
+        Ok(out_tree)
+    }
+
     /// 配置函数
     pub async fn set_func<D: AsDep>(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
         D::set_func(name, func_op).await
@@ -704,6 +795,13 @@ pub mod inc;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScriptTree {
     pub script: String,
+    pub name: String,
+    pub next_v: Vec<ScriptTree>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScriptTree1 {
+    pub script: Vec<String>,
     pub name: String,
     pub next_v: Vec<ScriptTree>,
 }
@@ -752,6 +850,10 @@ impl EdgeEngine {
 
     pub async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         main::execute1::<dep::Dep>(self, script_tree).await
+    }
+
+    pub async fn execute2(&mut self, script_tree: &ScriptTree1) -> io::Result<json::JsonValue> {
+        main::execute2::<dep::Dep>(self, script_tree).await
     }
 
     pub async fn commit(&mut self) -> io::Result<()> {
