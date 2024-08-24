@@ -116,7 +116,7 @@ mod dep {
                     for (name, _) in &*func_mp {
                         rs.push(name.clone());
                     }
-                    // dm.set(&output, rs).await?;
+                    dm.set(&output, rs).await?;
                 } else {
                     let input = get_path_anyway(dm.clone(), root, &inc.input).await?;
                     let input1 = get_path_anyway(dm.clone(), root, &inc.input1).await?;
