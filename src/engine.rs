@@ -163,12 +163,11 @@ mod dep {
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
         let root = gen_value();
-        dm
-            .append(
-                &Path::from_str(&format!("{root}->$:input")),
-                vec![input.to_string()],
-            )
-            .await?;
+        dm.append(
+            &Path::from_str(&format!("{root}->$:input")),
+            vec![input.to_string()],
+        )
+        .await?;
         let inc_v = parse_script(&script_tree.script)?;
         let rs = invoke_inc_v(dm.clone(), &root, &inc_v).await?;
         if script_tree.next_v.is_empty() {
@@ -196,12 +195,11 @@ mod dep {
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
         let root = gen_value();
-        dm
-            .append(
-                &Path::from_str(&format!("{root}->$:input")),
-                vec![input.to_string()],
-            )
-            .await?;
+        dm.append(
+            &Path::from_str(&format!("{root}->$:input")),
+            vec![input.to_string()],
+        )
+        .await?;
         let inc_v = parse_script1(&script_tree.script)?;
         let rs = invoke_inc_v(dm.clone(), &root, &inc_v).await?;
         if script_tree.next_v.is_empty() {
@@ -394,14 +392,22 @@ mod dep {
     }
 
     pub fn unwrap_value(root: &str, iv: IncValue) -> IncValue {
-        if let IncValue::Addr(addr) = &iv {
-            if addr.starts_with("$->") {
-                IncValue::Addr(format!("{root}{}", &addr[1..]))
-            } else {
-                iv
+        match &iv {
+            IncValue::Addr(addr) => {
+                if addr.starts_with("$->") {
+                    IncValue::Addr(format!("{root}{}", &addr[1..]))
+                } else {
+                    iv
+                }
             }
-        } else {
-            iv
+            IncValue::Value(value) => {
+                if value == "_" {
+                    return IncValue::Value(String::new());
+                } else {
+                    iv
+                }
+            }
+            _ => iv,
         }
     }
 
