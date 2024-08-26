@@ -4,11 +4,9 @@ use crate::util::Path;
 
 mod cache;
 mod mem;
-mod temp;
 
 pub use cache::*;
 pub use mem::*;
-pub use temp::*;
 
 pub type Auth = Option<HashSet<String>>;
 

@@ -1,8 +1,8 @@
 use std::{future, io, pin::Pin, sync::Arc};
 
-use crate::util::{Path, PathPart};
+use crate::{data::{Auth, MemDataManager}, util::{Path, PathPart}};
 
-use super::{AsDataManager, Auth, MemDataManager};
+use super::AsDataManager;
 
 #[derive(Clone)]
 pub struct TempDataManager {

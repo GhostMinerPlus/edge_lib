@@ -426,11 +426,11 @@ mod main {
 
     use crate::{data::AsDataManager, func, util::Path};
 
-    use super::{EdgeEngine, ScriptTree, ScriptTree1};
+    use super::{temp, EdgeEngine, ScriptTree, ScriptTree1};
 
     pub fn new_edge_engine(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
         super::dep::lazy_mp();
-        EdgeEngine { dm }
+        EdgeEngine { dm: Arc::new(temp::TempDataManager::new(dm)) }
     }
 
     /// 执行脚本树
@@ -448,7 +448,7 @@ mod main {
         use std::sync::Arc;
 
         use crate::{
-            data::{CacheDataManager, MemDataManager, TempDataManager},
+            data::{CacheDataManager, MemDataManager},
             engine::{main, EdgeEngine, ScriptTree},
         };
 
@@ -493,8 +493,7 @@ mod main {
             // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("DEBUG"))
             //     .init();
             let task = async {
-                let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(None))));
-                let dm = Arc::new(CacheDataManager::new(global));
+                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
                 let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
                 let rs = main::execute1(
                     &mut edge_engine,
@@ -620,7 +619,7 @@ mod main {
         #[test]
         fn test_set() {
             let task = async {
-                let global = Arc::new(TempDataManager::new(Arc::new(MemDataManager::new(None))));
+                let global = Arc::new(MemDataManager::new(None));
                 let dm = Arc::new(CacheDataManager::new(global));
                 let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
                 main::execute1(
@@ -785,6 +784,8 @@ mod main {
     }
 }
 
+mod temp;
+
 pub mod inc;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -802,7 +803,7 @@ pub struct ScriptTree1 {
 }
 
 pub struct EdgeEngine {
-    dm: Arc<dyn AsDataManager>,
+    dm: Arc<temp::TempDataManager>,
 }
 
 impl EdgeEngine {
