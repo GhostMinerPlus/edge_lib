@@ -5,9 +5,9 @@ mod main {
         write!(f, "{}", to_string(this))
     }
 
-    pub fn contains(this: &Path, code: &str) -> bool {
+    pub fn contains(this: &Path, paper: &str, code: &str) -> bool {
         for step in &this.step_v {
-            if step.code == code {
+            if step.paper == paper && step.code == code {
                 return true;
             }
         }
@@ -277,8 +277,8 @@ impl Path {
     }
 
     /// step_v 中是否包含 code
-    pub fn contains(&self, code: &str) -> bool {
-        main::contains(self, code)
+    pub fn contains(&self, paper: &str, code: &str) -> bool {
+        main::contains(self, paper, code)
     }
 }
 

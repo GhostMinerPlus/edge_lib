@@ -19,9 +19,9 @@ mod main {
             return Ok(());
         }
         let path_v: Vec<Path> = cache.keys().cloned().collect();
-        let code = &w_path.step_v.last().unwrap().code;
+        let step = w_path.step_v.last().unwrap();
         for path in &path_v {
-            if path == w_path || !path.contains(code) {
+            if path == w_path || !path.contains(&step.paper, &step.code) {
                 // 同路径和与 code 无关的路径缓存仍有效
                 continue;
             }

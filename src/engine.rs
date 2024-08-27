@@ -25,20 +25,20 @@ mod dep {
 
     pub fn get_inc_v(
         dm: Arc<dyn AsDataManager>,
-        definition: &str,
+        function: &str,
     ) -> impl std::future::Future<Output = io::Result<Vec<Inc>>> + Send + '_ {
         async move {
             let output_v = dm
-                .get(&Path::from_str(&format!("{definition}->inc->output")))
+                .get(&Path::from_str(&format!("{function}->inc->output")))
                 .await?;
             let function_v = dm
-                .get(&Path::from_str(&format!("{definition}->inc->function")))
+                .get(&Path::from_str(&format!("{function}->inc->function")))
                 .await?;
             let input_v = dm
-                .get(&Path::from_str(&format!("{definition}->inc->input")))
+                .get(&Path::from_str(&format!("{function}->inc->input")))
                 .await?;
             let input1_v = dm
-                .get(&Path::from_str(&format!("{definition}->inc->input1")))
+                .get(&Path::from_str(&format!("{function}->inc->input1")))
                 .await?;
             let mut inc_v = Vec::with_capacity(output_v.len());
             for i in 0..output_v.len() {
@@ -60,22 +60,21 @@ mod dep {
     pub async fn get_value_v(dm: Arc<dyn AsDataManager>, iv: &IncValue) -> io::Result<Vec<String>> {
         match iv {
             IncValue::Addr(addr) => dm.get(&Path::from_str(addr)).await,
-            IncValue::Definition(definition) => main::sync_dedfinition(dm, definition).await,
+            IncValue::Definition(definition) => main::sync_definition(dm, definition).await,
             IncValue::Value(name) => Ok(vec![name.clone()]),
         }
     }
 
     pub async fn get_path_anyway(
         dm: Arc<dyn AsDataManager>,
-        root: &str,
         iv: &IncValue,
     ) -> io::Result<Path> {
         match iv {
             IncValue::Addr(addr) => Ok(Path::from_str(addr)),
             IncValue::Definition(definition) => {
-                let path = Path::from_str(&format!("{root}->$:_{definition}"));
+                let path = Path::from_str(&format!("{definition}->cache"));
                 if dm.get(&path).await?.is_empty() {
-                    let rs = main::sync_dedfinition(dm.clone(), definition).await?;
+                    let rs = main::sync_definition(dm.clone(), definition).await?;
                     dm.set(&path, rs).await?;
                 }
                 Ok(path)
@@ -88,7 +87,7 @@ mod dep {
     }
 
     #[async_recursion::async_recursion]
-    pub async fn invoke_inc(dm: Arc<dyn AsDataManager>, root: &str, inc: &Inc) -> io::Result<()> {
+    pub async fn invoke_inc(dm: Arc<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
         log::debug!("invoke_inc: {:?}", inc);
         let output = Path::from_str(inc.output.as_str());
         if output.step_v.is_empty() {
@@ -104,8 +103,8 @@ mod dep {
         let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
         match func_mp.get(&func_name_v[0]) {
             Some(func) => {
-                let input = get_path_anyway(dm.clone(), root, &inc.input).await?;
-                let input1 = get_path_anyway(dm.clone(), root, &inc.input1).await?;
+                let input = get_path_anyway(dm.clone(), &inc.input).await?;
+                let input1 = get_path_anyway(dm.clone(), &inc.input1).await?;
                 func.invoke(dm.clone(), output.clone(), input, input1)
                     .await?;
             }
@@ -118,8 +117,8 @@ mod dep {
                     }
                     dm.set(&output, rs).await?;
                 } else {
-                    let input = get_path_anyway(dm.clone(), root, &inc.input).await?;
-                    let input1 = get_path_anyway(dm.clone(), root, &inc.input1).await?;
+                    let input = get_path_anyway(dm.clone(), &inc.input).await?;
+                    let input1 = get_path_anyway(dm.clone(), &inc.input1).await?;
                     let input_item_v = dm.get(&input).await?;
                     let input1_item_v = dm.get(&input1).await?;
                     let inc_v = get_inc_v(dm.clone(), &func_name_v[0]).await?;
@@ -347,7 +346,7 @@ mod dep {
                     input: unwrap_value(root, inc.input.clone()),
                     input1: unwrap_value(root, inc.input1.clone()),
                 };
-                invoke_inc(dm.clone(), root, &inc).await?;
+                invoke_inc(dm.clone(), &inc).await?;
             }
             dm.get(&Path::from_str(&format!("{root}->$:output"))).await
         }
@@ -403,6 +402,10 @@ mod dep {
             IncValue::Value(value) => {
                 if value == "_" {
                     return IncValue::Value(String::new());
+                } else if value == "?" {
+                    return IncValue::Value(gen_value());
+                } else if value == "$?" {
+                    return IncValue::Value(format!("${}", gen_value()));
                 } else {
                     iv
                 }
@@ -430,7 +433,9 @@ mod main {
 
     pub fn new_edge_engine(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
         super::dep::lazy_mp();
-        EdgeEngine { dm: Arc::new(temp::TempDataManager::new(dm)) }
+        EdgeEngine {
+            dm: Arc::new(temp::TempDataManager::new(dm)),
+        }
     }
 
     /// 执行脚本树
@@ -768,16 +773,21 @@ mod main {
     }
 
     /// From definition synchronization values
-    pub async fn sync_dedfinition(
+    pub async fn sync_definition(
         dm: Arc<dyn AsDataManager>,
         definition: &str,
     ) -> io::Result<Vec<String>> {
         if definition.starts_with("$$") {
             return Ok(vec![definition[1..].to_string()]);
         }
-        let inc_v = super::dep::get_inc_v(dm.clone(), definition).await?;
+        let inc_v = super::dep::get_inc_v(dm.clone(), &format!("{definition}->function")).await?;
         let new_root = super::dep::gen_value();
         log::debug!("inc_v.len(): {}", inc_v.len());
+        dm.set(
+            &Path::from_str(&format!("{new_root}->$:input")),
+            vec![definition.to_string()],
+        )
+        .await?;
         super::dep::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
         dm.get(&Path::from_str(&format!("{new_root}->$:output")))
             .await
@@ -821,6 +831,7 @@ impl EdgeEngine {
                 .unwrap();
             let mut paper_set = paper_v.into_iter().collect::<HashSet<String>>();
             paper_set.insert("$".to_string());
+            paper_set.insert("".to_string());
             dm.divide(Some(paper_set))
         };
         main::new_edge_engine(dm)
@@ -894,7 +905,8 @@ mod tests {
                         "$->$:inc->function = + _".to_string(),
                         "$->$:inc->input = 1 _".to_string(),
                         "$->$:inc->input1 = 1 _".to_string(),
-                        "$test->inc = $->$:inc _".to_string(),
+                        "$test->function = ? _".to_string(),
+                        "$test->function->inc = $->$:inc _".to_string(),
                         "$->$:output = $test _".to_string(),
                     ],
                     name: "rs".to_string(),
