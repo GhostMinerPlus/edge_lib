@@ -13,7 +13,7 @@ pub enum IncValue {
     /// -> <-
     Addr(String),
     /// $xxx
-    Definition(String),
+    ComputedValue(String),
     /// Normal
     Value(String),
 }
@@ -22,7 +22,7 @@ impl IncValue {
     pub fn as_mut(&mut self) -> &mut String {
         match self {
             IncValue::Addr(addr) => addr,
-            IncValue::Definition(definition) => definition,
+            IncValue::ComputedValue(definition) => definition,
             IncValue::Value(value) => value,
         }
     }
@@ -30,7 +30,7 @@ impl IncValue {
     pub fn as_str(&self) -> &str {
         match self {
             IncValue::Addr(addr) => addr,
-            IncValue::Definition(definition) => definition,
+            IncValue::ComputedValue(definition) => definition,
             IncValue::Value(value) => value,
         }
     }
@@ -38,7 +38,7 @@ impl IncValue {
     pub fn to_string(&self) -> String {
         match self {
             IncValue::Addr(addr) => addr.clone(),
-            IncValue::Definition(definition) => definition.clone(),
+            IncValue::ComputedValue(definition) => definition.clone(),
             IncValue::Value(value) => value.clone(),
         }
     }
@@ -51,7 +51,7 @@ impl IncValue {
             return Self::Addr(s.to_string());
         }
         if s.starts_with('$') {
-            Self::Definition(s.to_string())
+            Self::ComputedValue(s.to_string())
         } else {
             Self::Value(s.to_string())
         }
@@ -65,7 +65,7 @@ impl IncValue {
             return Self::Addr(s);
         }
         if s.starts_with('$') {
-            Self::Definition(s)
+            Self::ComputedValue(s)
         } else {
             Self::Value(s)
         }

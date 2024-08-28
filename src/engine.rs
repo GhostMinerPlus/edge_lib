@@ -60,7 +60,7 @@ mod dep {
     pub async fn get_value_v(dm: Arc<dyn AsDataManager>, iv: &IncValue) -> io::Result<Vec<String>> {
         match iv {
             IncValue::Addr(addr) => dm.get(&Path::from_str(addr)).await,
-            IncValue::Definition(definition) => main::sync_definition(dm, definition).await,
+            IncValue::ComputedValue(computed_value) => main::sync_computed_value(dm, computed_value).await,
             IncValue::Value(name) => Ok(vec![name.clone()]),
         }
     }
@@ -71,10 +71,10 @@ mod dep {
     ) -> io::Result<Path> {
         match iv {
             IncValue::Addr(addr) => Ok(Path::from_str(addr)),
-            IncValue::Definition(definition) => {
-                let path = Path::from_str(&format!("{definition}->cache"));
+            IncValue::ComputedValue(computed_value) => {
+                let path = Path::from_str(&format!("{computed_value}->cache"));
                 if dm.get(&path).await?.is_empty() {
-                    let rs = main::sync_definition(dm.clone(), definition).await?;
+                    let rs = main::sync_computed_value(dm.clone(), computed_value).await?;
                     dm.set(&path, rs).await?;
                 }
                 Ok(path)
@@ -772,20 +772,20 @@ mod main {
         json
     }
 
-    /// From definition synchronization values
-    pub async fn sync_definition(
+    pub async fn sync_computed_value(
         dm: Arc<dyn AsDataManager>,
-        definition: &str,
+        computed_value: &str,
     ) -> io::Result<Vec<String>> {
-        if definition.starts_with("$$") {
-            return Ok(vec![definition[1..].to_string()]);
+        if computed_value.starts_with("$$") {
+            return Ok(vec![computed_value[1..].to_string()]);
         }
-        let inc_v = super::dep::get_inc_v(dm.clone(), &format!("{definition}->function")).await?;
+        let inc_v = super::dep::get_inc_v(dm.clone(), &format!("{computed_value}->function")).await?;
+        let owner_v = dm.get(&Path::from_str(&format!("{computed_value}->owner"))).await?;
         let new_root = super::dep::gen_value();
         log::debug!("inc_v.len(): {}", inc_v.len());
         dm.set(
             &Path::from_str(&format!("{new_root}->$:input")),
-            vec![definition.to_string()],
+            owner_v,
         )
         .await?;
         super::dep::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
