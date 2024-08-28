@@ -59,25 +59,31 @@ mod dep {
 
     pub async fn get_value_v(dm: Arc<dyn AsDataManager>, iv: &IncValue) -> io::Result<Vec<String>> {
         match iv {
-            IncValue::Addr(addr) => dm.get(&Path::from_str(addr)).await,
-            IncValue::ComputedValue(computed_value) => main::sync_computed_value(dm, computed_value).await,
+            IncValue::Addr(addr) => {
+                let path = Path::from_str(addr);
+                if path.is_computed() {
+                    main::sync_computed_value(dm, path).await
+                } else {
+                    dm.get(&path).await
+                }
+            }
             IncValue::Value(name) => Ok(vec![name.clone()]),
         }
     }
 
-    pub async fn get_path_anyway(
-        dm: Arc<dyn AsDataManager>,
-        iv: &IncValue,
-    ) -> io::Result<Path> {
+    pub async fn get_path_anyway(dm: Arc<dyn AsDataManager>, iv: &IncValue) -> io::Result<Path> {
         match iv {
-            IncValue::Addr(addr) => Ok(Path::from_str(addr)),
-            IncValue::ComputedValue(computed_value) => {
-                let path = Path::from_str(&format!("{computed_value}->cache"));
-                if dm.get(&path).await?.is_empty() {
-                    let rs = main::sync_computed_value(dm.clone(), computed_value).await?;
+            IncValue::Addr(addr) => {
+                let mut path = Path::from_str(addr);
+                if path.is_computed() {
+                    let rs = main::sync_computed_value(dm.clone(), path.clone()).await?;
+                    let step = path.step_v.last_mut().unwrap();
+                    step.code = step.code.replacen("$", "#", 1);
                     dm.set(&path, rs).await?;
+                    Ok(path)
+                } else {
+                    Ok(Path::from_str(addr))
                 }
-                Ok(path)
             }
             IncValue::Value(value) => Ok(Path {
                 root: value.clone(),
@@ -124,19 +130,19 @@ mod dep {
                     let inc_v = get_inc_v(dm.clone(), &func_name_v[0]).await?;
                     let new_root = gen_value();
                     dm.set(
-                        &Path::from_str(&format!("{new_root}->$:input")),
+                        &Path::from_str(&format!("{new_root}->$:#input")),
                         input_item_v,
                     )
                     .await?;
                     dm.set(
-                        &Path::from_str(&format!("{new_root}->$:input1")),
+                        &Path::from_str(&format!("{new_root}->$:#input1")),
                         input1_item_v,
                     )
                     .await?;
                     log::debug!("inc_v.len(): {}", inc_v.len());
                     invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
                     let rs = dm
-                        .get(&Path::from_str(&format!("{new_root}->$:output")))
+                        .get(&Path::from_str(&format!("{new_root}->$:#output")))
                         .await?;
                     dm.set(&output, rs).await?;
                 }
@@ -163,7 +169,7 @@ mod dep {
     ) -> io::Result<()> {
         let root = gen_value();
         dm.append(
-            &Path::from_str(&format!("{root}->$:input")),
+            &Path::from_str(&format!("{root}->$:#input")),
             vec![input.to_string()],
         )
         .await?;
@@ -195,7 +201,7 @@ mod dep {
     ) -> io::Result<()> {
         let root = gen_value();
         dm.append(
-            &Path::from_str(&format!("{root}->$:input")),
+            &Path::from_str(&format!("{root}->$:#input")),
             vec![input.to_string()],
         )
         .await?;
@@ -257,7 +263,7 @@ mod dep {
                     });
                 } else if word_v[1] == "+=" {
                     inc_v.push(Inc {
-                        output: IncValue::from_str("$->$:temp"),
+                        output: IncValue::from_str("$->$:#temp"),
                         function: IncValue::from_str(word_v[2].trim()),
                         input: IncValue::from_str(word_v[3].trim()),
                         input1: IncValue::from_str(word_v[4].trim()),
@@ -266,7 +272,7 @@ mod dep {
                         output: IncValue::from_str(word_v[0].trim()),
                         function: IncValue::from_str("append"),
                         input: IncValue::from_str(word_v[0].trim()),
-                        input1: IncValue::from_str("$->$:temp"),
+                        input1: IncValue::from_str("$->$:#temp"),
                     });
                 } else {
                     return Err(io::Error::other("when parse_script:\n\tunknown operator"));
@@ -306,7 +312,7 @@ mod dep {
                     });
                 } else if word_v[1] == "+=" {
                     inc_v.push(Inc {
-                        output: IncValue::from_str("$->$:temp"),
+                        output: IncValue::from_str("$->$:#temp"),
                         function: IncValue::from_str(word_v[2].trim()),
                         input: IncValue::from_str(word_v[3].trim()),
                         input1: IncValue::from_str(word_v[4].trim()),
@@ -315,7 +321,7 @@ mod dep {
                         output: IncValue::from_str(word_v[0].trim()),
                         function: IncValue::from_str("append"),
                         input: IncValue::from_str(word_v[0].trim()),
-                        input1: IncValue::from_str("$->$:temp"),
+                        input1: IncValue::from_str("$->$:#temp"),
                     });
                 } else {
                     return Err(io::Error::other("when parse_script:\n\tunknown operator"));
@@ -348,7 +354,7 @@ mod dep {
                 };
                 invoke_inc(dm.clone(), &inc).await?;
             }
-            dm.get(&Path::from_str(&format!("{root}->$:output"))).await
+            dm.get(&Path::from_str(&format!("{root}->$:#output"))).await
         }
     }
 
@@ -410,7 +416,6 @@ mod dep {
                     iv
                 }
             }
-            _ => iv,
         }
     }
 
@@ -466,14 +471,14 @@ mod main {
                     &mut edge_engine,
                     &ScriptTree {
                         script: [
-                            "$->$:left = new 100 100",
-                            "$->$:right = new 100 100",
-                            "$->$:output = + $->$:left $->$:right",
+                            "$->$:#left = new 100 100",
+                            "$->$:#right = new 100 100",
+                            "$->$:#output = + $->$:#left $->$:#right",
                         ]
                         .join("\n"),
                         name: "root".to_string(),
                         next_v: vec![ScriptTree {
-                            script: format!("$->$:output = rand $->$:input _"),
+                            script: format!("$->$:#output = rand $->$:#input _"),
                             name: "then".to_string(),
                             next_v: vec![],
                         }],
@@ -509,7 +514,7 @@ mod main {
                             "$->point->width = 1 _",
                             "$->point->width append $->point->width 1",
                             "$->edge->point = $->point _",
-                            "$->$:output = $->edge->point->width _",
+                            "$->$:#output = $->edge->point->width _",
                         ]
                         .join("\n"),
                         name: "result".to_string(),
@@ -537,9 +542,9 @@ mod main {
                     &mut edge_engine,
                     &ScriptTree {
                         script: [
-                            "$->$:server_exists = inner root->web_server huiwen<-name",
-                            "$->$:web_server = if $->$:server_exists ?",
-                            "$->$:output = = $->$:web_server _",
+                            "$->$:#server_exists = inner root->web_server huiwen<-name",
+                            "$->$:#web_server = if $->$:#server_exists ?",
+                            "$->$:#output = = $->$:#web_server _",
                         ]
                         .join("\n"),
                         name: "info".to_string(),
@@ -565,7 +570,7 @@ mod main {
                 let rs = main::execute1(
                     &mut edge_engine,
                     &ScriptTree {
-                        script: ["$->$:output = = '1\\s' _"].join("\n"),
+                        script: ["$->$:#output = = '1\\s' _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     },
@@ -603,7 +608,7 @@ mod main {
                 let rs = main::execute1(
                     &mut edge_engine,
                     &ScriptTree {
-                        script: ["test->name = edge _", "$->$:output = edge<-name _"].join("\n"),
+                        script: ["test->name = edge _", "$->$:#output = edge<-name _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     },
@@ -631,14 +636,14 @@ mod main {
                     &mut edge_engine,
                     &ScriptTree {
                         script: [
-                            "$->$:server_exists inner root->web_server {name}<-name",
-                            "$->$:web_server if $->$:server_exists ?",
-                            "$->$:web_server->name = {name} _",
-                            "$->$:web_server->ip = {ip} _",
-                            "$->$:web_server->port = {port} _",
-                            "$->$:web_server->path = {path} _",
-                            "$->$:web_server left $->$:web_server $->$:server_exists",
-                            "root->web_server append root->web_server $->$:web_server",
+                            "$->$:#server_exists inner root->web_server {name}<-name",
+                            "$->$:#web_server if $->$:#server_exists ?",
+                            "$->$:#web_server->name = {name} _",
+                            "$->$:#web_server->ip = {ip} _",
+                            "$->$:#web_server->port = {port} _",
+                            "$->$:#web_server->path = {path} _",
+                            "$->$:#web_server left $->$:#web_server $->$:#server_exists",
+                            "root->web_server append root->web_server $->$:#web_server",
                         ]
                         .join("\n"),
                         name: "result".to_string(),
@@ -652,14 +657,14 @@ mod main {
                     &mut edge_engine,
                     &ScriptTree {
                         script: [
-                            "$->$:server_exists inner root->web_server {name}<-name",
-                            "$->$:web_server if $->$:server_exists ?",
-                            "$->$:web_server->name = {name} _",
-                            "$->$:web_server->ip = {ip} _",
-                            "$->$:web_server->port = {port} _",
-                            "$->$:web_server->path = {path} _",
-                            "$->$:web_server left $->$:web_server $->$:server_exists",
-                            "root->web_server append root->web_server $->$:web_server",
+                            "$->$:#server_exists inner root->web_server {name}<-name",
+                            "$->$:#web_server if $->$:#server_exists ?",
+                            "$->$:#web_server->name = {name} _",
+                            "$->$:#web_server->ip = {ip} _",
+                            "$->$:#web_server->port = {port} _",
+                            "$->$:#web_server->path = {path} _",
+                            "$->$:#web_server left $->$:#web_server $->$:#server_exists",
+                            "root->web_server append root->web_server $->$:#web_server",
                         ]
                         .join("\n"),
                         name: "result".to_string(),
@@ -672,7 +677,7 @@ mod main {
                 let rs = main::execute1(
                     &mut edge_engine,
                     &ScriptTree {
-                        script: ["$->$:output = root->web_server->ip _"].join("\n"),
+                        script: ["$->$:#output = root->web_server->ip _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     },
@@ -698,10 +703,10 @@ mod main {
                     &mut edge_engine,
                     &ScriptTree {
                         script: [
-                            "$->$:proxy = ? _",
-                            "$->$:proxy->name = editor _",
-                            "$->$:proxy->path = /editor _",
-                            "root->proxy append root->proxy $->$:proxy",
+                            "$->$:#proxy = ? _",
+                            "$->$:#proxy->name = editor _",
+                            "$->$:#proxy->path = /editor _",
+                            "root->proxy append root->proxy $->$:#proxy",
                         ]
                         .join("\n"),
                         name: "result".to_string(),
@@ -715,9 +720,9 @@ mod main {
                     &mut edge_engine,
                     &ScriptTree {
                         script: [
-                            "$->$:proxy inner root->proxy editor<-name",
-                            "$->$:proxy->path = /editor _",
-                            "$->$:output = root->proxy->path _",
+                            "$->$:#proxy inner root->proxy editor<-name",
+                            "$->$:#proxy->path = /editor _",
+                            "$->$:#output = root->proxy->path _",
                         ]
                         .join("\n"),
                         name: "result".to_string(),
@@ -731,7 +736,7 @@ mod main {
                 let rs = main::execute1(
                     &mut edge_engine,
                     &ScriptTree {
-                        script: ["$->$:output = root->proxy->path _"].join("\n"),
+                        script: ["$->$:#output = root->proxy->path _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     },
@@ -774,23 +779,22 @@ mod main {
 
     pub async fn sync_computed_value(
         dm: Arc<dyn AsDataManager>,
-        computed_value: &str,
+        mut path: Path,
     ) -> io::Result<Vec<String>> {
-        if computed_value.starts_with("$$") {
-            return Ok(vec![computed_value[1..].to_string()]);
-        }
-        let inc_v = super::dep::get_inc_v(dm.clone(), &format!("{computed_value}->function")).await?;
-        let owner_v = dm.get(&Path::from_str(&format!("{computed_value}->owner"))).await?;
+        let type_ = {
+            let step = path.step_v.pop().unwrap();
+            if step.paper.is_empty() {
+                step.code
+            } else {
+                format!("{}:{}", step.paper, step.code)
+            }
+        };
+        let inc_v = super::dep::get_inc_v(dm.clone(), &type_).await?;
         let new_root = super::dep::gen_value();
         log::debug!("inc_v.len(): {}", inc_v.len());
-        dm.set(
-            &Path::from_str(&format!("{new_root}->$:input")),
-            owner_v,
-        )
-        .await?;
-        super::dep::invoke_inc_v(dm.clone(), &new_root, &inc_v).await?;
-        dm.get(&Path::from_str(&format!("{new_root}->$:output")))
-            .await
+        dm.set(&Path::from_str(&format!("{new_root}->$:#input")), dm.get(&path).await?)
+            .await?;
+        super::dep::invoke_inc_v(dm.clone(), &new_root, &inc_v).await
     }
 }
 
@@ -831,7 +835,6 @@ impl EdgeEngine {
                 .unwrap();
             let mut paper_set = paper_v.into_iter().collect::<HashSet<String>>();
             paper_set.insert("$".to_string());
-            paper_set.insert("".to_string());
             dm.divide(Some(paper_set))
         };
         main::new_edge_engine(dm)
@@ -900,21 +903,26 @@ mod tests {
             let rs = edge_engine
                 .execute2(&super::ScriptTree1 {
                     script: vec![
-                        "$->$:inc = ? _".to_string(),
-                        "$->$:inc->output = '$->$:output' _".to_string(),
-                        "$->$:inc->function = + _".to_string(),
-                        "$->$:inc->input = 1 _".to_string(),
-                        "$->$:inc->input1 = 1 _".to_string(),
-                        "$test->function = ? _".to_string(),
-                        "$test->function->inc = $->$:inc _".to_string(),
-                        "$->$:output = $test _".to_string(),
+                        "$->$:#inc = ? _".to_string(),
+                        "$->$:#inc->output = '$->$:#output' _".to_string(),
+                        "$->$:#inc->function = + _".to_string(),
+                        "$->$:#inc->input = 1 _".to_string(),
+                        "$->$:#inc->input1 = 1 _".to_string(),
+                        "$test->inc = $->$:#inc _".to_string(),
+                        "$->$:#inc = ? _".to_string(),
+                        "$->$:#inc->output = '$->$:#output' _".to_string(),
+                        "$->$:#inc->function = + _".to_string(),
+                        "$->$:#inc->input = '$->$:#input->$test' _".to_string(),
+                        "$->$:#inc->input1 = 1 _".to_string(),
+                        "$test1->inc = $->$:#inc _".to_string(),
+                        "$->$:#output = $->$test1 _".to_string(),
                     ],
                     name: "rs".to_string(),
                     next_v: vec![],
                 })
                 .await
                 .unwrap();
-            assert_eq!(rs["rs"][0], "2")
+            assert_eq!(rs["rs"][0], "3")
         });
     }
 }

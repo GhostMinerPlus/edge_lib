@@ -100,7 +100,7 @@ mod main {
     mod test_from_str {
         #[test]
         fn should_from_str() {
-            let path = super::from_str("$51aae06c-65e9-468a-83b5-041fd52b37fc->$:proxy->path");
+            let path = super::from_str("$51aae06c-65e9-468a-83b5-041fd52b37fc->$:#proxy->path");
             assert_eq!(path.step_v.len(), 2);
         }
     }
@@ -113,17 +113,10 @@ mod main {
         s
     }
 
-    pub fn is_temp(this: &Path) -> bool {
-        if this.step_v.is_empty() {
-            return false;
-        }
-        this.step_v.last().unwrap().paper == "$"
-    }
-
     pub fn path_type(this: &Path) -> PathType {
         let mut cnt = 0;
         for i in 0..this.step_v.len() {
-            if this.step_v[i].paper == "$" {
+            if this.step_v[i].code.starts_with('#') {
                 cnt += 1;
             }
         }
@@ -141,10 +134,10 @@ mod main {
             return PathPart::EntirePure;
         }
         let first_step = &this.step_v[0];
-        if first_step.paper == "$" {
+        if first_step.code.starts_with('#') {
             let mut end = 1;
             for i in 1..this.step_v.len() {
-                if this.step_v[i].paper != "$" {
+                if !this.step_v[i].code.starts_with('#') {
                     break;
                 }
                 end += 1;
@@ -159,7 +152,7 @@ mod main {
         } else {
             let mut end = 1;
             for i in 1..this.step_v.len() {
-                if this.step_v[i].paper == "$" {
+                if this.step_v[i].code.starts_with('#') {
                     break;
                 }
                 end += 1;
@@ -265,7 +258,18 @@ impl Path {
     }
 
     pub fn is_temp(&self) -> bool {
-        main::is_temp(self)
+        if self.step_v.is_empty() {
+            return false;
+        }
+        self.step_v.last().unwrap().code.starts_with('#')
+    }
+
+    pub fn is_computed(&self) -> bool {
+        if self.step_v.is_empty() {
+            return false;
+        }
+        let step = self.step_v.last().unwrap();
+        step.arrow == "->" && step.code.starts_with("$")
     }
 
     pub fn path_type(&self) -> PathType {
@@ -276,7 +280,7 @@ impl Path {
         main::first_part(self)
     }
 
-    /// step_v 中是否包含 code
+    /// step_v 中是否包含 paper:code
     pub fn contains(&self, paper: &str, code: &str) -> bool {
         main::contains(self, paper, code)
     }

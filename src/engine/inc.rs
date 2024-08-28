@@ -12,8 +12,6 @@ pub struct Inc {
 pub enum IncValue {
     /// -> <-
     Addr(String),
-    /// $xxx
-    ComputedValue(String),
     /// Normal
     Value(String),
 }
@@ -22,7 +20,6 @@ impl IncValue {
     pub fn as_mut(&mut self) -> &mut String {
         match self {
             IncValue::Addr(addr) => addr,
-            IncValue::ComputedValue(definition) => definition,
             IncValue::Value(value) => value,
         }
     }
@@ -30,7 +27,6 @@ impl IncValue {
     pub fn as_str(&self) -> &str {
         match self {
             IncValue::Addr(addr) => addr,
-            IncValue::ComputedValue(definition) => definition,
             IncValue::Value(value) => value,
         }
     }
@@ -38,7 +34,6 @@ impl IncValue {
     pub fn to_string(&self) -> String {
         match self {
             IncValue::Addr(addr) => addr.clone(),
-            IncValue::ComputedValue(definition) => definition.clone(),
             IncValue::Value(value) => value.clone(),
         }
     }
@@ -50,11 +45,7 @@ impl IncValue {
         if s.contains("->") || s.contains("<-") {
             return Self::Addr(s.to_string());
         }
-        if s.starts_with('$') {
-            Self::ComputedValue(s.to_string())
-        } else {
-            Self::Value(s.to_string())
-        }
+        Self::Value(s.to_string())
     }
 
     pub fn from_string(s: String) -> Self {
@@ -64,10 +55,6 @@ impl IncValue {
         if s.contains("->") || s.contains("<-") {
             return Self::Addr(s);
         }
-        if s.starts_with('$') {
-            Self::ComputedValue(s)
-        } else {
-            Self::Value(s)
-        }
+        Self::Value(s)
     }
 }
