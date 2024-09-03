@@ -27,6 +27,7 @@ mod main {
                     let ch = &word[pos + offset + 1..pos + offset + 2];
                     let ch = match ch {
                         "n" => "\n",
+                        "t" => "\t",
                         "s" => " ",
                         _ => ch,
                     };
@@ -290,4 +291,13 @@ impl std::fmt::Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         main::fmt(self, f)
     }
+}
+
+pub fn unescape_word(word: &str) -> String {
+    let common_s = word
+        .replace("\\", "\\\\")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace("\'", "\\'");
+    format!("'{}'", common_s.replace(" ", "\\s"))
 }
