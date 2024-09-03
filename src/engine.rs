@@ -28,28 +28,8 @@ mod dep {
         function: &str,
     ) -> impl std::future::Future<Output = io::Result<Vec<Inc>>> + Send + '_ {
         async move {
-            let output_v = dm
-                .get(&Path::from_str(&format!("{function}->inc->output")))
-                .await?;
-            let function_v = dm
-                .get(&Path::from_str(&format!("{function}->inc->function")))
-                .await?;
-            let input_v = dm
-                .get(&Path::from_str(&format!("{function}->inc->input")))
-                .await?;
-            let input1_v = dm
-                .get(&Path::from_str(&format!("{function}->inc->input1")))
-                .await?;
-            let mut inc_v = Vec::with_capacity(output_v.len());
-            for i in 0..output_v.len() {
-                inc_v.push(Inc {
-                    output: IncValue::from_str(&output_v[i]),
-                    function: IncValue::from_str(&function_v[i]),
-                    input: IncValue::from_str(&input_v[i]),
-                    input1: IncValue::from_str(&input1_v[i]),
-                });
-            }
-            Ok(inc_v)
+            let inc_v = dm.get(&Path::from_str(&format!("{function}->inc"))).await?;
+            parse_script1(&inc_v)
         }
     }
 
