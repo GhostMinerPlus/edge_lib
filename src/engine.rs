@@ -23,16 +23,6 @@ mod dep {
         None;
     static mut EDGE_ENGINE_FUNC_MAP_OP_LOCK: Mutex<()> = Mutex::new(());
 
-    pub fn get_inc_v(
-        dm: Arc<dyn AsDataManager>,
-        function: &str,
-    ) -> impl std::future::Future<Output = io::Result<Vec<Inc>>> + Send + '_ {
-        async move {
-            let inc_v = dm.get(&Path::from_str(&format!("{function}->inc"))).await?;
-            parse_script1(&inc_v)
-        }
-    }
-
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
     }
@@ -70,7 +60,7 @@ mod dep {
                 } else {
                     let input_item_v = dm.get(&input).await?;
                     let input1_item_v = dm.get(&input1).await?;
-                    let inc_v = get_inc_v(dm.clone(), &func_name_v[0]).await?;
+                    let inc_v = parse_script1(&func_name_v)?;
                     let new_root = gen_value();
                     dm.set(
                         &Path::from_str(&format!("{new_root}->$:input")),
