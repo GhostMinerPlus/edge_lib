@@ -40,19 +40,19 @@ mod dep {
     #[async_recursion::async_recursion]
     pub async fn invoke_inc(dm: Arc<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
         log::debug!("invoke_inc: {:?}", inc);
-        let output = Path::from_str(inc.output.as_str());
+        let output = Path::from_inc_value(&inc.output);
         if output.step_v.is_empty() {
             return Ok(());
         }
-        let func_name_v = dm.get(&Path::from_str(inc.function.as_str())).await?;
+        let func_name_v = dm.get(&Path::from_inc_value(&inc.function)).await?;
         if func_name_v.is_empty() {
             return Err(io::Error::other(format!(
                 "no funtion: {}\nat invoke_inc",
                 inc.function.as_str()
             )));
         }
-        let input = Path::from_str(inc.input.as_str());
-        let input1 = Path::from_str(inc.input1.as_str());
+        let input = Path::from_inc_value(&inc.input);
+        let input1 = Path::from_inc_value(&inc.input1);
         let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
         match func_mp.get(&func_name_v[0]) {
             Some(func) => {
@@ -804,5 +804,37 @@ impl EdgeEngine {
 
     pub async fn commit(&mut self) -> io::Result<()> {
         self.dm.commit().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{data::{AsDataManager, CacheDataManager, MemDataManager}, util::Path};
+
+    use super::{EdgeEngine, ScriptTree1};
+
+    #[test]
+    fn test() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
+            let mut engine = EdgeEngine::new(dm.clone(), "root").await;
+            engine
+                .execute2(&ScriptTree1 {
+                    script: vec!["$->$:temp append $->$:temp '$->$:output\\s+\\s1\\s1'".to_string(), "test->test:test = $->$:temp _".to_string()],
+                    name: "rs".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            engine.commit().await.unwrap();
+            let rs = dm.get(&Path::from_str("test->test:test")).await.unwrap();
+            assert_eq!(rs.len(), 1);
+        });
     }
 }

@@ -1,3 +1,5 @@
+use crate::engine::inc::IncValue;
+
 mod main {
     use super::{Path, PathPart, PathType, Step};
 
@@ -252,6 +254,16 @@ pub struct Path {
 impl Path {
     pub fn from_str(path: &str) -> Self {
         main::from_str(path)
+    }
+    
+    pub fn from_inc_value(iv: &IncValue) -> Path {
+        match iv {
+            IncValue::Addr(addr) => Path::from_str(addr),
+            IncValue::Value(value) => Path {
+                root: value.clone(),
+                step_v: Vec::new(),
+            },
+        }
     }
 
     pub fn to_string(&self) -> String {
