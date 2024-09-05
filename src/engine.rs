@@ -754,17 +754,17 @@ impl EdgeEngine {
                     name: "rs".to_string(),
                     next_v: vec![
                         ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->owner _")],
+                            script: vec![format!("$->$:output = $->$:input->owner->name _")],
                             name: "owner".to_string(),
                             next_v: vec![],
                         },
                         ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->writer _")],
+                            script: vec![format!("$->$:output = $->$:input->writer->name _")],
                             name: "writer".to_string(),
                             next_v: vec![],
                         },
                         ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->reader _")],
+                            script: vec![format!("$->$:output = $->$:input->reader->name _")],
                             name: "reader".to_string(),
                             next_v: vec![],
                         },
