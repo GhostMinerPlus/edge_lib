@@ -99,7 +99,7 @@ impl AsDataManager for MemDataManager {
             let mut mem_table = this.mem_table.lock().await;
             match &this.auth {
                 Some(auth) => {
-                    for paper in auth {
+                    for paper in &auth.writer {
                         mem_table.clear_paper(paper);
                     }
                 }
@@ -126,7 +126,7 @@ impl AsDataManager for MemDataManager {
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &this.auth {
-                if !auth.contains(&step.paper) {
+                if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
@@ -154,7 +154,7 @@ impl AsDataManager for MemDataManager {
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &this.auth {
-                if !auth.contains(&step.paper) {
+                if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
@@ -190,7 +190,7 @@ impl AsDataManager for MemDataManager {
             while !path.step_v.is_empty() {
                 let step = path.step_v.remove(0);
                 if let Some(auth) = &this.auth {
-                    if !auth.contains(&step.paper) {
+                    if !auth.writer.contains(&step.paper) && !auth.reader.contains(&step.paper) {
                         return Err(io::Error::other("permision denied"));
                     }
                 }

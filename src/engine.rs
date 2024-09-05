@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::{io, sync::Arc};
 
-use crate::{data::AsDataManager, func, util::Path};
+use crate::data::PermissionPair;
+use crate::{data::AsDataManager, func};
 
 mod dep {
     use std::{
@@ -149,7 +150,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute(dm.clone(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute1(dm.clone(), input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -724,7 +725,7 @@ pub struct ScriptTree {
 pub struct ScriptTree1 {
     pub script: Vec<String>,
     pub name: String,
-    pub next_v: Vec<ScriptTree>,
+    pub next_v: Vec<ScriptTree1>,
 }
 
 pub struct EdgeEngine {
@@ -740,13 +741,60 @@ impl EdgeEngine {
         let dm = if writer == "root" {
             dm
         } else {
-            let paper_v = dm
-                .get(&Path::from_str(&format!("{writer}->paper->name")))
+            let mut engine = main::new_edge_engine(dm.clone());
+            // TODO: Maybe execute3(script: &str) -> JsonValue
+            let rs = engine
+                .execute2(&ScriptTree1 {
+                    script: vec![
+                        format!("$->$:output = ? _"),
+                        format!("$->$:output->owner inner paper<-type {writer}<-owner"),
+                        format!("$->$:output->writer inner paper<-type {writer}<-writer"),
+                        format!("$->$:output->reader inner paper<-type {writer}<-reader"),
+                    ],
+                    name: "rs".to_string(),
+                    next_v: vec![
+                        ScriptTree1 {
+                            script: vec![format!("$->$:output = $->$:input->owner _")],
+                            name: "owner".to_string(),
+                            next_v: vec![],
+                        },
+                        ScriptTree1 {
+                            script: vec![format!("$->$:output = $->$:input->writer _")],
+                            name: "writer".to_string(),
+                            next_v: vec![],
+                        },
+                        ScriptTree1 {
+                            script: vec![format!("$->$:output = $->$:input->reader _")],
+                            name: "reader".to_string(),
+                            next_v: vec![],
+                        },
+                    ],
+                })
                 .await
                 .unwrap();
-            let mut paper_set = paper_v.into_iter().collect::<HashSet<String>>();
-            paper_set.insert("$".to_string());
-            dm.divide(Some(paper_set))
+
+            let owner_set = rs["rs"]["owner"][0]
+                .members()
+                .into_iter()
+                .map(|item| item.as_str().unwrap().to_string())
+                .collect::<HashSet<String>>();
+            let mut writer_set = rs["rs"]["writer"][0]
+                .members()
+                .into_iter()
+                .map(|item| item.as_str().unwrap().to_string())
+                .collect::<HashSet<String>>();
+            writer_set.insert("$".to_string());
+            writer_set.extend(owner_set);
+
+            let reader_set = rs["rs"]["reader"][0]
+                .members()
+                .into_iter()
+                .map(|item| item.as_str().unwrap().to_string())
+                .collect::<HashSet<String>>();
+            dm.divide(Some(PermissionPair {
+                writer: writer_set,
+                reader: reader_set,
+            }))
         };
         main::new_edge_engine(dm)
     }
@@ -801,7 +849,10 @@ impl EdgeEngine {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{data::{AsDataManager, CacheDataManager, MemDataManager}, util::Path};
+    use crate::{
+        data::{AsDataManager, CacheDataManager, MemDataManager},
+        util::Path,
+    };
 
     use super::{EdgeEngine, ScriptTree1};
 
@@ -816,7 +867,10 @@ mod tests {
             let mut engine = EdgeEngine::new(dm.clone(), "root").await;
             engine
                 .execute2(&ScriptTree1 {
-                    script: vec!["$->$:temp append $->$:temp '$->$:output\\s+\\s1\\s1'".to_string(), "test->test:test = $->$:temp _".to_string()],
+                    script: vec![
+                        "$->$:temp append $->$:temp '$->$:output\\s+\\s1\\s1'".to_string(),
+                        "test->test:test = $->$:temp _".to_string(),
+                    ],
                     name: "rs".to_string(),
                     next_v: vec![],
                 })

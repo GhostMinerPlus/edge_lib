@@ -8,7 +8,13 @@ mod mem;
 pub use cache::*;
 pub use mem::*;
 
-pub type Auth = Option<HashSet<String>>;
+pub type Auth = Option<PermissionPair>;
+
+#[derive(Clone)]
+pub struct PermissionPair {
+    pub writer: HashSet<String>,
+    pub reader: HashSet<String>,
+}
 
 pub trait AsDataManager: Send + Sync {
     fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager>;
