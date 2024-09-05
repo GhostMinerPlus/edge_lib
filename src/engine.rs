@@ -737,8 +737,8 @@ impl EdgeEngine {
     /// # Parameters
     /// - dm: data manager in root
     /// - writer: writer
-    pub async fn new(dm: Arc<dyn AsDataManager>, writer: &str) -> Self {
-        let dm = if writer == "root" {
+    pub async fn new(dm: Arc<dyn AsDataManager>, user: &str) -> Self {
+        let dm = if user == "root" {
             dm
         } else {
             let mut engine = main::new_edge_engine(dm.clone());
@@ -747,17 +747,15 @@ impl EdgeEngine {
                 .execute2(&ScriptTree1 {
                     script: vec![
                         format!("$->$:output = ? _"),
-                        format!("$->$:output->$:owner inner paper<-type {writer}<-owner"),
-                        format!("$->$:output->$:writer inner paper<-type {writer}<-writer"),
-                        format!("$->$:output->$:reader inner paper<-type {writer}<-reader"),
+                        format!("$->$:output->$:writer inner paper<-type {user}<-writer"),
+                        format!("$->$:owner inner paper<-type {user}<-owner"),
+                        format!("$->$:manager inner paper<-type {user}<-manager"),
+                        format!("$->$:output->$:writer append $->$:output->$:writer $->$:owner"),
+                        format!("$->$:output->$:writer append $->$:output->$:writer $->$:manager"),
+                        format!("$->$:output->$:reader inner paper<-type {user}<-reader"),
                     ],
                     name: "rs".to_string(),
                     next_v: vec![
-                        ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->$:owner->name _")],
-                            name: "owner".to_string(),
-                            next_v: vec![],
-                        },
                         ScriptTree1 {
                             script: vec![format!("$->$:output = $->$:input->$:writer->name _")],
                             name: "writer".to_string(),
@@ -773,18 +771,12 @@ impl EdgeEngine {
                 .await
                 .unwrap();
 
-            let owner_set = rs["rs"]["owner"][0]
-                .members()
-                .into_iter()
-                .map(|item| item.as_str().unwrap().to_string())
-                .collect::<HashSet<String>>();
             let mut writer_set = rs["rs"]["writer"][0]
                 .members()
                 .into_iter()
                 .map(|item| item.as_str().unwrap().to_string())
                 .collect::<HashSet<String>>();
             writer_set.insert("$".to_string());
-            writer_set.extend(owner_set);
 
             let reader_set = rs["rs"]["reader"][0]
                 .members()
