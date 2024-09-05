@@ -747,24 +747,24 @@ impl EdgeEngine {
                 .execute2(&ScriptTree1 {
                     script: vec![
                         format!("$->$:output = ? _"),
-                        format!("$->$:output->owner inner paper<-type {writer}<-owner"),
-                        format!("$->$:output->writer inner paper<-type {writer}<-writer"),
-                        format!("$->$:output->reader inner paper<-type {writer}<-reader"),
+                        format!("$->$:output->$:owner inner paper<-type {writer}<-owner"),
+                        format!("$->$:output->$:writer inner paper<-type {writer}<-writer"),
+                        format!("$->$:output->$:reader inner paper<-type {writer}<-reader"),
                     ],
                     name: "rs".to_string(),
                     next_v: vec![
                         ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->owner->name _")],
+                            script: vec![format!("$->$:output = $->$:input->$:owner->name _")],
                             name: "owner".to_string(),
                             next_v: vec![],
                         },
                         ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->writer->name _")],
+                            script: vec![format!("$->$:output = $->$:input->$:writer->name _")],
                             name: "writer".to_string(),
                             next_v: vec![],
                         },
                         ScriptTree1 {
-                            script: vec![format!("$->$:output = $->$:input->reader->name _")],
+                            script: vec![format!("$->$:output = $->$:input->$:reader->name _")],
                             name: "reader".to_string(),
                             next_v: vec![],
                         },
