@@ -305,6 +305,7 @@ mod dep {
             func_mp.insert("left".to_string(), Box::new(func::left));
             func_mp.insert("inner".to_string(), Box::new(func::inner));
             func_mp.insert("if".to_string(), Box::new(func::if_));
+            func_mp.insert("if1".to_string(), Box::new(func::if_1));
             //
             func_mp.insert("+".to_string(), Box::new(func::add));
             func_mp.insert("-".to_string(), Box::new(func::minus));
