@@ -53,7 +53,7 @@ impl AsDataManager for TempDataManager {
                     this.temp
                         .append(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -67,7 +67,7 @@ impl AsDataManager for TempDataManager {
                     this.global
                         .append(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -106,7 +106,7 @@ impl AsDataManager for TempDataManager {
                     this.temp
                         .set(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -126,7 +126,7 @@ impl AsDataManager for TempDataManager {
                     this.global
                         .set(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -143,10 +143,11 @@ impl AsDataManager for TempDataManager {
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
-            if path.root.is_empty() {
+            if let Some(root) = &path.root_op {
+                return Box::pin(future::ready(Ok(vec![root.clone()])));
+            } else {
                 return Box::pin(future::ready(Ok(vec![])));
             }
-            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
         let this = self.clone();
         let path = path.clone();
@@ -159,7 +160,7 @@ impl AsDataManager for TempDataManager {
                     for root in item_v {
                         rs.extend(
                             this.get(&Path {
-                                root,
+                                root_op: Some(root),
                                 step_v: path.step_v[part_path.step_v.len()..].to_vec(),
                             })
                             .await?,
@@ -175,7 +176,7 @@ impl AsDataManager for TempDataManager {
                     for root in item_v {
                         rs.extend(
                             this.get(&Path {
-                                root,
+                                root_op: Some(root),
                                 step_v: path.step_v[part_path.step_v.len()..].to_vec(),
                             })
                             .await?,

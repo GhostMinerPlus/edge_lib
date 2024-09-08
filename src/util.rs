@@ -1,6 +1,6 @@
-use crate::engine::inc::IncValue;
-
 mod main {
+    use crate::util;
+
     use super::{Path, PathPart, PathType, Step};
 
     pub fn fmt(this: &Path, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -57,19 +57,26 @@ mod main {
     }
 
     pub fn from_str(path: &str) -> Path {
+        if path == "_" {
+            return Path {
+                root_op: None,
+                step_v: Vec::new(),
+            };
+        }
         if path.is_empty() {
             return Path {
-                root: String::new(),
+                root_op: Some(String::new()),
                 step_v: Vec::new(),
             };
         }
         log::debug!("Path::from_str: {path}");
         if path.starts_with('\'') && path.ends_with('\'') {
             return Path {
-                root: path.to_string(),
+                root_op: Some(util::escape_word(path)),
                 step_v: Vec::new(),
             };
         }
+
         let s = find_arrrow(path).unwrap_or(path.len());
         let root = path[0..s].to_string();
         let mut tail = &path[s..];
@@ -96,7 +103,10 @@ mod main {
             });
             tail = &tail[s..];
         }
-        Path { root, step_v }
+        Path {
+            root_op: Some(root),
+            step_v,
+        }
     }
 
     #[cfg(test)]
@@ -109,11 +119,15 @@ mod main {
     }
 
     pub fn to_string(this: &Path) -> String {
-        let mut s = this.root.clone();
-        for step in &this.step_v {
-            s = format!("{s}{}{}", step.arrow, step.code);
+        if let Some(root) = &this.root_op {
+            let mut s = root.clone();
+            for step in &this.step_v {
+                s = format!("{s}{}{}", step.arrow, step.code);
+            }
+            s
+        } else {
+            "_".to_string()
         }
-        s
     }
 
     pub fn path_type(this: &Path) -> PathType {
@@ -149,7 +163,7 @@ mod main {
                 return PathPart::EntireTemp;
             }
             PathPart::Temp(Path {
-                root: this.root.clone(),
+                root_op: this.root_op.clone(),
                 step_v: this.step_v[0..end].to_vec(),
             })
         } else {
@@ -164,7 +178,7 @@ mod main {
                 return PathPart::EntirePure;
             }
             PathPart::Pure(Path {
-                root: this.root.clone(),
+                root_op: this.root_op.clone(),
                 step_v: this.step_v[0..end].to_vec(),
             })
         }
@@ -237,7 +251,7 @@ pub enum PathPart {
     EntireTemp,
 }
 
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq, Debug)]
 pub struct Step {
     pub arrow: String,
     pub paper: String,
@@ -245,25 +259,15 @@ pub struct Step {
 }
 
 /// root->paper:code, root->paper:code, root->paper:code
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq, Debug)]
 pub struct Path {
-    pub root: String,
+    pub root_op: Option<String>,
     pub step_v: Vec<Step>,
 }
 
 impl Path {
     pub fn from_str(path: &str) -> Self {
         main::from_str(path)
-    }
-    
-    pub fn from_inc_value(iv: &IncValue) -> Path {
-        match iv {
-            IncValue::Addr(addr) => Path::from_str(addr),
-            IncValue::Value(value) => Path {
-                root: value.clone(),
-                step_v: Vec::new(),
-            },
-        }
     }
 
     pub fn to_string(&self) -> String {

@@ -122,10 +122,11 @@ impl AsDataManager for CacheDataManager {
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
-            if path.root.is_empty() {
+            if let Some(root) = &path.root_op {
+                return Box::pin(future::ready(Ok(vec![root.clone()])));
+            } else {
                 return Box::pin(future::ready(Ok(vec![])));
             }
-            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
         let this = self.clone();
         let path = path.clone();
