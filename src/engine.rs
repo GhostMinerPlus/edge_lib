@@ -62,22 +62,7 @@ mod dep {
                     let input_item_v = dm.get(&inc.input).await?;
                     let input1_item_v = dm.get(&inc.input1).await?;
                     let inc_v = parse_script1(&func_name_v)?;
-                    let new_root = gen_value();
-                    dm.set(
-                        &Path::from_str(&format!("{new_root}->$:input")),
-                        input_item_v,
-                    )
-                    .await?;
-                    dm.set(
-                        &Path::from_str(&format!("{new_root}->$:input1")),
-                        input1_item_v,
-                    )
-                    .await?;
-                    log::debug!("inc_v.len(): {}", inc_v.len());
-                    invoke_inc_v(dm.clone(), &new_root, inc_v).await?;
-                    let rs = dm
-                        .get(&Path::from_str(&format!("{new_root}->$:output")))
-                        .await?;
+                    let rs = invoke_inc_v(dm.clone(), input_item_v, input1_item_v, inc_v).await?;
                     dm.set(&inc.output, rs).await?;
                 }
             }
@@ -101,14 +86,8 @@ mod dep {
         script_tree: &ScriptTree,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
-        let root = gen_value();
-        dm.append(
-            &Path::from_str(&format!("{root}->$:input")),
-            vec![input.to_string()],
-        )
-        .await?;
         let inc_v = parse_script(&script_tree.script)?;
-        let rs = invoke_inc_v(dm.clone(), &root, inc_v).await?;
+        let rs = invoke_inc_v(dm.clone(), vec![input.to_string()], vec![], inc_v).await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -133,14 +112,8 @@ mod dep {
         script_tree: &ScriptTree1,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
-        let root = gen_value();
-        dm.append(
-            &Path::from_str(&format!("{root}->$:input")),
-            vec![input.to_string()],
-        )
-        .await?;
         let inc_v = parse_script1(&script_tree.script)?;
-        let rs = invoke_inc_v(dm.clone(), &root, inc_v).await?;
+        let rs = invoke_inc_v(dm.clone(), vec![input.to_string()], vec![], inc_v).await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -272,20 +245,53 @@ mod dep {
         Ok(inc_v)
     }
 
-    pub fn invoke_inc_v<'a>(
+    pub fn invoke_inc_v(
         dm: Arc<dyn AsDataManager>,
-        root: &'a str,
-        mut inc_v: Vec<Inc>,
-    ) -> impl std::future::Future<Output = io::Result<Vec<String>>> + Send + 'a {
+        input_item_v: Vec<String>,
+        input1_item_v: Vec<String>,
+        inc_v: Vec<Inc>,
+    ) -> impl std::future::Future<Output = io::Result<Vec<String>>> + Send {
         async move {
-            log::debug!("inc_v.len(): {}", inc_v.len());
-            for inc in &mut inc_v {
-                unwrap_value(root, &mut inc.output);
-                unwrap_value(root, &mut inc.function);
-                unwrap_value(root, &mut inc.input);
-                unwrap_value(root, &mut inc.input1);
-                invoke_inc(dm.clone(), &inc).await?;
+            if inc_v.is_empty() {
+                return Ok(vec![]);
             }
+            let root = gen_value();
+            let (dm, inc) = {
+                let mut inc_v = inc_v;
+                let mut last_inc = inc_v.pop().unwrap();
+                let dm = dm.divide(dm.get_auth().clone());
+                dm.append(&Path::from_str(&format!("{root}->$:input")), input_item_v)
+                    .await?;
+                dm.append(&Path::from_str(&format!("{root}->$:input1")), input1_item_v)
+                    .await?;
+                log::debug!("inc_v.len(): {}", inc_v.len());
+                for mut inc in inc_v {
+                    unwrap_value(&root, &mut inc.output);
+                    unwrap_value(&root, &mut inc.function);
+                    unwrap_value(&root, &mut inc.input);
+                    unwrap_value(&root, &mut inc.input1);
+                    invoke_inc(dm.clone(), &inc).await?;
+                }
+                let dm1 = dm.divide(dm.get_auth().clone());
+                unwrap_value(&root, &mut last_inc.output);
+                unwrap_value(&root, &mut last_inc.function);
+                unwrap_value(&root, &mut last_inc.input);
+                unwrap_value(&root, &mut last_inc.input1);
+                if dm1.get(&last_inc.output).await?.is_empty() {
+                    dm1.set(&last_inc.output, dm.get(&last_inc.output).await?).await?;
+                }
+                if dm1.get(&last_inc.function).await?.is_empty() {
+                    dm1.set(&last_inc.function, dm.get(&last_inc.function).await?).await?;
+                }
+                if dm1.get(&last_inc.input).await?.is_empty() {
+                    dm1.set(&last_inc.input, dm.get(&last_inc.input).await?).await?;
+                }
+                if dm1.get(&last_inc.input1).await?.is_empty() {
+                    dm1.set(&last_inc.input1, dm.get(&last_inc.input1).await?).await?;
+                }
+                (dm1, last_inc)
+            };
+            invoke_inc(dm.clone(), &inc).await?;
             dm.get(&Path::from_str(&format!("{root}->$:output"))).await
         }
     }
