@@ -281,14 +281,6 @@ impl Path {
         self.step_v.last().unwrap().paper == "$"
     }
 
-    pub fn is_computed(&self) -> bool {
-        if self.step_v.is_empty() {
-            return false;
-        }
-        let step = self.step_v.last().unwrap();
-        step.arrow == "->" && step.code.starts_with("$")
-    }
-
     pub fn path_type(&self) -> PathType {
         main::path_type(self)
     }

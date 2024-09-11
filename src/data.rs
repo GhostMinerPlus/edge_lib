@@ -2,10 +2,8 @@ use std::{collections::HashSet, io, pin::Pin, sync::Arc};
 
 use crate::util::Path;
 
-mod cache;
 mod mem;
 
-pub use cache::*;
 pub use mem::*;
 
 pub type Auth = Option<PermissionPair>;
@@ -42,6 +40,4 @@ pub trait AsDataManager: Send + Sync {
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
 
     fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 }

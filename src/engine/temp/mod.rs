@@ -1,6 +1,9 @@
 use std::{future, io, pin::Pin, sync::Arc};
 
-use crate::{data::{Auth, MemDataManager}, util::{Path, PathPart}};
+use crate::{
+    data::{Auth, MemDataManager},
+    util::{Path, PathPart},
+};
 
 use super::AsDataManager;
 
@@ -17,6 +20,74 @@ impl TempDataManager {
             global,
             temp: Arc::new(MemDataManager::new(auth)),
         }
+    }
+
+    pub fn get_global(&self) -> Arc<dyn AsDataManager> {
+        self.global.clone()
+    }
+
+    pub async fn reset(&self) -> io::Result<()> {
+        self.temp.clear().await
+    }
+
+    pub fn while1(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = this.get(&path).await?;
+            loop {
+                for root in &root_v {
+                    let path = Path {
+                        root_op: Some(root.clone()),
+                        step_v: vec![step.clone()],
+                    };
+                    if path.is_temp() {
+                        if !this.temp.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    } else {
+                        if !this.global.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+    }
+
+    pub fn while0(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = this.get(&path).await?;
+            loop {
+                for root in &root_v {
+                    let path = Path {
+                        root_op: Some(root.clone()),
+                        step_v: vec![step.clone()],
+                    };
+                    if path.is_temp() {
+                        if this.temp.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    } else {
+                        if this.global.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
     }
 }
 
@@ -202,14 +273,6 @@ impl AsDataManager for TempDataManager {
         Box::pin(async move {
             this.temp.clear().await?;
             this.global.clear().await
-        })
-    }
-
-    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let this = self.clone();
-        Box::pin(async move {
-            this.temp.clear().await?;
-            this.global.commit().await
         })
     }
 }

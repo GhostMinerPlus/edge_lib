@@ -16,7 +16,6 @@ fn main() {
         )
         .await
         .unwrap();
-        dm.commit().await.unwrap();
         let name_v = dm.get(&Path::from_str("root->name")).await.unwrap();
         assert_eq!(name_v.len(), 1);
         assert_eq!(name_v[0], "data_manager");

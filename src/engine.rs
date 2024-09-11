@@ -7,43 +7,35 @@ use crate::util::Path;
 use crate::{data::AsDataManager, func};
 
 mod dep {
-    use std::{
-        collections::HashMap,
-        io,
-        sync::{Arc, Mutex},
-    };
+    use std::{collections::HashMap, io, sync::Mutex};
 
     use tokio::sync::RwLock;
 
-    use super::{Inc, ScriptTree, ScriptTree1};
+    use super::{EdgeEngine, Inc, ScriptTree, ScriptTree1};
     use crate::{data::AsDataManager, func, util::Path};
 
-    static mut EDGE_ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> =
-        None;
-    static mut EDGE_ENGINE_FUNC_MAP_OP_LOCK: Mutex<()> = Mutex::new(());
+    static mut ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> = None;
+    static mut ENGINE_FUNC_MAP_OP_LOCK: Mutex<()> = Mutex::new(());
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
     }
 
     #[async_recursion::async_recursion]
-    pub async fn invoke_inc(dm: Arc<dyn AsDataManager>, inc: &Inc) -> io::Result<()> {
+    pub async fn invoke_inc(engine: EdgeEngine, inc: &Inc) -> io::Result<()> {
         log::debug!("invoke_inc: {:?}", inc);
-        if inc.output.step_v.is_empty() {
-            return Ok(());
-        }
-        let func_name_v = dm.get(&inc.function).await?;
+        let func_name_v = engine.dm.get(&inc.function).await?;
         if func_name_v.is_empty() {
             return Err(io::Error::other(format!(
                 "no funtion: {}\nat invoke_inc",
                 inc.function.to_string()
             )));
         }
-        let func_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
+        let func_mp = unsafe { ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
         match func_mp.get(&func_name_v[0]) {
             Some(func) => {
                 func.invoke(
-                    dm.clone(),
+                    engine.dm.clone(),
                     inc.output.clone(),
                     inc.input.clone(),
                     inc.input1.clone(),
@@ -57,13 +49,18 @@ mod dep {
                     for (name, _) in &*func_mp {
                         rs.push(name.clone());
                     }
-                    dm.set(&inc.output, rs).await?;
+                    engine.dm.set(&inc.output, rs).await?;
+                } else if func_name_v[0] == "while1" {
+                    engine.dm.while1(&inc.input).await?;
+                } else if func_name_v[0] == "while0" {
+                    engine.dm.while0(&inc.input).await?;
                 } else {
-                    let input_item_v = dm.get(&inc.input).await?;
-                    let input1_item_v = dm.get(&inc.input1).await?;
+                    let input_item_v = engine.dm.get(&inc.input).await?;
+                    let input1_item_v = engine.dm.get(&inc.input1).await?;
                     let inc_v = parse_script1(&func_name_v)?;
-                    let rs = invoke_inc_v(dm.clone(), input_item_v, input1_item_v, inc_v).await?;
-                    dm.set(&inc.output, rs).await?;
+                    let rs =
+                        invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
+                    engine.dm.set(&inc.output, rs).await?;
                 }
             }
         }
@@ -72,7 +69,7 @@ mod dep {
 
     pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
         lazy_mp();
-        let mut w_mp = unsafe { EDGE_ENGINE_FUNC_MAP_OP.as_ref().unwrap().write() }.await;
+        let mut w_mp = unsafe { ENGINE_FUNC_MAP_OP.as_ref().unwrap().write() }.await;
         match func_op {
             Some(func) => w_mp.insert(name.to_string(), func),
             None => w_mp.remove(name),
@@ -81,13 +78,13 @@ mod dep {
 
     #[async_recursion::async_recursion]
     pub async fn inner_execute(
-        dm: Arc<dyn AsDataManager>,
+        engine: EdgeEngine,
         input: &str,
         script_tree: &ScriptTree,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
         let inc_v = parse_script(&script_tree.script)?;
-        let rs = invoke_inc_v(dm.clone(), vec![input.to_string()], vec![], inc_v).await?;
+        let rs = invoke_inc_v(engine.clone(), vec![input.to_string()], vec![], inc_v).await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -97,7 +94,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute(dm.clone(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute(engine.clone(), input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -107,13 +104,13 @@ mod dep {
 
     #[async_recursion::async_recursion]
     pub async fn inner_execute1(
-        dm: Arc<dyn AsDataManager>,
+        engine: EdgeEngine,
         input: &str,
         script_tree: &ScriptTree1,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
         let inc_v = parse_script1(&script_tree.script)?;
-        let rs = invoke_inc_v(dm.clone(), vec![input.to_string()], vec![], inc_v).await?;
+        let rs = invoke_inc_v(engine.clone(), vec![input.to_string()], vec![], inc_v).await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -123,7 +120,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute1(dm.clone(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute1(engine.clone(), input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -246,7 +243,7 @@ mod dep {
     }
 
     pub fn invoke_inc_v(
-        dm: Arc<dyn AsDataManager>,
+        engine: EdgeEngine,
         input_item_v: Vec<String>,
         input1_item_v: Vec<String>,
         inc_v: Vec<Inc>,
@@ -256,13 +253,17 @@ mod dep {
                 return Ok(vec![]);
             }
             let root = gen_value();
-            let (dm, inc) = {
+            let (engine, inc) = {
                 let mut inc_v = inc_v;
                 let mut last_inc = inc_v.pop().unwrap();
-                let dm = dm.divide(dm.get_auth().clone());
-                dm.append(&Path::from_str(&format!("{root}->$:input")), input_item_v)
+                let engine = engine.divide();
+                engine
+                    .dm
+                    .append(&Path::from_str(&format!("{root}->$:input")), input_item_v)
                     .await?;
-                dm.append(&Path::from_str(&format!("{root}->$:input1")), input1_item_v)
+                engine
+                    .dm
+                    .append(&Path::from_str(&format!("{root}->$:input1")), input1_item_v)
                     .await?;
                 log::debug!("inc_v.len(): {}", inc_v.len());
                 for mut inc in inc_v {
@@ -270,35 +271,50 @@ mod dep {
                     unwrap_value(&root, &mut inc.function);
                     unwrap_value(&root, &mut inc.input);
                     unwrap_value(&root, &mut inc.input1);
-                    invoke_inc(dm.clone(), &inc).await?;
+                    invoke_inc(engine.clone(), &inc).await?;
                 }
-                let dm1 = dm.divide(dm.get_auth().clone());
+                let engine1 = engine.divide();
                 unwrap_value(&root, &mut last_inc.output);
                 unwrap_value(&root, &mut last_inc.function);
                 unwrap_value(&root, &mut last_inc.input);
                 unwrap_value(&root, &mut last_inc.input1);
-                if dm1.get(&last_inc.output).await?.is_empty() {
-                    dm1.set(&last_inc.output, dm.get(&last_inc.output).await?).await?;
+                if engine1.dm.get(&last_inc.output).await?.is_empty() {
+                    engine1
+                        .dm
+                        .set(&last_inc.output, engine.dm.get(&last_inc.output).await?)
+                        .await?;
                 }
-                if dm1.get(&last_inc.function).await?.is_empty() {
-                    dm1.set(&last_inc.function, dm.get(&last_inc.function).await?).await?;
+                if engine1.dm.get(&last_inc.function).await?.is_empty() {
+                    engine1
+                        .dm
+                        .set(&last_inc.function, engine.dm.get(&last_inc.function).await?)
+                        .await?;
                 }
-                if dm1.get(&last_inc.input).await?.is_empty() {
-                    dm1.set(&last_inc.input, dm.get(&last_inc.input).await?).await?;
+                if engine1.dm.get(&last_inc.input).await?.is_empty() {
+                    engine1
+                        .dm
+                        .set(&last_inc.input, engine.dm.get(&last_inc.input).await?)
+                        .await?;
                 }
-                if dm1.get(&last_inc.input1).await?.is_empty() {
-                    dm1.set(&last_inc.input1, dm.get(&last_inc.input1).await?).await?;
+                if engine1.dm.get(&last_inc.input1).await?.is_empty() {
+                    engine1
+                        .dm
+                        .set(&last_inc.input1, engine.dm.get(&last_inc.input1).await?)
+                        .await?;
                 }
-                (dm1, last_inc)
+                (engine1, last_inc)
             };
-            invoke_inc(dm.clone(), &inc).await?;
-            dm.get(&Path::from_str(&format!("{root}->$:output"))).await
+            invoke_inc(engine.clone(), &inc).await?;
+            engine
+                .dm
+                .get(&Path::from_str(&format!("{root}->$:output")))
+                .await
         }
     }
 
     pub fn lazy_mp() {
-        let lk = unsafe { EDGE_ENGINE_FUNC_MAP_OP_LOCK.lock().unwrap() };
-        if unsafe { EDGE_ENGINE_FUNC_MAP_OP.is_none() } {
+        let lk = unsafe { ENGINE_FUNC_MAP_OP_LOCK.lock().unwrap() };
+        if unsafe { ENGINE_FUNC_MAP_OP.is_none() } {
             let mut func_mp: HashMap<String, Box<dyn func::AsFunc>> = HashMap::new();
             func_mp.insert("new".to_string(), Box::new(func::new));
             func_mp.insert("line".to_string(), Box::new(func::line));
@@ -309,6 +325,7 @@ mod dep {
             func_mp.insert("left".to_string(), Box::new(func::left));
             func_mp.insert("inner".to_string(), Box::new(func::inner));
             func_mp.insert("if".to_string(), Box::new(func::if_));
+            func_mp.insert("if0".to_string(), Box::new(func::if_0));
             func_mp.insert("if1".to_string(), Box::new(func::if_1));
             //
             func_mp.insert("+".to_string(), Box::new(func::add));
@@ -330,7 +347,7 @@ mod dep {
             func_mp.insert("slice".to_string(), Box::new(func::slice));
             func_mp.insert("sort".to_string(), Box::new(func::sort));
             func_mp.insert("sort_s".to_string(), Box::new(func::sort_s));
-            unsafe { EDGE_ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
+            unsafe { ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
         }
         drop(lk);
     }
@@ -362,7 +379,7 @@ mod main {
 
     use super::{temp, EdgeEngine, ScriptTree, ScriptTree1};
 
-    pub fn new_edge_engine(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
+    pub fn new_engine(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
         super::dep::lazy_mp();
         EdgeEngine {
             dm: Arc::new(temp::TempDataManager::new(dm)),
@@ -375,7 +392,7 @@ mod main {
         script_tree: &ScriptTree,
     ) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        super::dep::inner_execute(this.dm.clone(), "", &script_tree, &mut out_tree).await?;
+        super::dep::inner_execute(this.clone(), "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
     }
 
@@ -384,17 +401,17 @@ mod main {
         use std::sync::Arc;
 
         use crate::{
-            data::{CacheDataManager, MemDataManager},
+            data::MemDataManager,
             engine::{main, EdgeEngine, ScriptTree},
         };
 
         #[test]
         fn test() {
             let task = async {
-                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
-                let mut edge_engine = EdgeEngine::new(dm, "root").await;
+                let dm = Arc::new(MemDataManager::new(None));
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->$:left = new 100 100",
@@ -412,7 +429,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
                 let rs = &rs["root"]["then"];
                 assert_eq!(rs.len(), 100);
                 assert_eq!(rs[0].len(), 200);
@@ -429,10 +446,10 @@ mod main {
             // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("DEBUG"))
             //     .init();
             let task = async {
-                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
-                let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
+                let dm = Arc::new(MemDataManager::new(None));
+                let mut engine = EdgeEngine::new(dm.clone(), "root").await;
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->edge = ? _",
@@ -462,10 +479,10 @@ mod main {
         #[test]
         fn test_if() {
             let task = async {
-                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
-                let mut edge_engine = EdgeEngine::new(dm, "root").await;
+                let dm = Arc::new(MemDataManager::new(None));
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->$:server_exists = inner root->web_server huiwen<-name",
@@ -491,10 +508,10 @@ mod main {
         #[test]
         fn test_space() {
             let task = async {
-                let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
-                let mut edge_engine = EdgeEngine::new(dm, "root").await;
+                let dm = Arc::new(MemDataManager::new(None));
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: ["$->$:output = = '1\\s' _"].join("\n"),
                         name: "result".to_string(),
@@ -515,12 +532,11 @@ mod main {
         #[test]
         fn test_cache() {
             let task = async {
-                let global = Arc::new(MemDataManager::new(None));
-                let dm = Arc::new(CacheDataManager::new(global));
+                let dm = Arc::new(MemDataManager::new(None));
 
-                let mut edge_engine = EdgeEngine::new(dm, "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: ["root->name = edge _"].join("\n"),
                         name: "".to_string(),
@@ -529,10 +545,10 @@ mod main {
                 )
                 .await
                 .unwrap();
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
 
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: ["test->name = edge _", "$->$:output = edge<-name _"].join("\n"),
                         name: "result".to_string(),
@@ -541,7 +557,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
 
                 assert_eq!(rs["result"].len(), 2);
             };
@@ -555,11 +571,10 @@ mod main {
         #[test]
         fn test_set() {
             let task = async {
-                let global = Arc::new(MemDataManager::new(None));
-                let dm = Arc::new(CacheDataManager::new(global));
-                let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
+                let dm = Arc::new(MemDataManager::new(None));
+                let mut engine = EdgeEngine::new(dm.clone(), "root").await;
                 main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->$:server_exists inner root->web_server {name}<-name",
@@ -578,9 +593,9 @@ mod main {
                 )
                 .await
                 .unwrap();
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
                 main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->$:server_exists inner root->web_server {name}<-name",
@@ -599,9 +614,9 @@ mod main {
                 )
                 .await
                 .unwrap();
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: ["$->$:output = root->web_server->ip _"].join("\n"),
                         name: "result".to_string(),
@@ -622,11 +637,9 @@ mod main {
         #[test]
         fn test_set_proxy() {
             let task = async {
-                let global = Arc::new(MemDataManager::new(None));
-                let dm = Arc::new(CacheDataManager::new(global));
-                let mut edge_engine = EdgeEngine::new(dm.clone(), "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
                 main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->$:proxy = ? _",
@@ -641,9 +654,9 @@ mod main {
                 )
                 .await
                 .unwrap();
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: [
                             "$->$:proxy inner root->proxy editor<-name",
@@ -658,9 +671,9 @@ mod main {
                 .await
                 .unwrap();
                 assert_eq!(rs["result"].len(), 1);
-                edge_engine.commit().await.unwrap();
+                engine.reset().await.unwrap();
                 let rs = main::execute1(
-                    &mut edge_engine,
+                    &mut engine,
                     &ScriptTree {
                         script: ["$->$:output = root->proxy->path _"].join("\n"),
                         name: "result".to_string(),
@@ -685,7 +698,7 @@ mod main {
         script_tree: &ScriptTree1,
     ) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        super::dep::inner_execute1(this.dm.clone(), "", &script_tree, &mut out_tree).await?;
+        super::dep::inner_execute1(this.clone(), "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
     }
 
@@ -728,6 +741,7 @@ pub struct ScriptTree1 {
     pub next_v: Vec<ScriptTree1>,
 }
 
+#[derive(Clone)]
 pub struct EdgeEngine {
     dm: Arc<temp::TempDataManager>,
 }
@@ -741,7 +755,7 @@ impl EdgeEngine {
         let dm = if user == "root" {
             dm
         } else {
-            let mut engine = main::new_edge_engine(dm.clone());
+            let mut engine = main::new_engine(dm.clone());
             // TODO: Maybe execute3(script: &str) -> JsonValue
             let rs = engine
                 .execute2(&ScriptTree1 {
@@ -788,7 +802,21 @@ impl EdgeEngine {
                 reader: reader_set,
             }))
         };
-        main::new_edge_engine(dm)
+        main::new_engine(dm)
+    }
+
+    pub fn get_gloabl(&self) -> Arc<dyn AsDataManager> {
+        self.dm.get_global()
+    }
+
+    pub fn divide(&self) -> Self {
+        Self {
+            dm: Arc::new(temp::TempDataManager::new(self.dm.get_global())),
+        }
+    }
+
+    pub async fn divide_with_user(&self, user: &str) -> Self {
+        Self::new(self.dm.get_global(), user).await
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
@@ -832,8 +860,9 @@ impl EdgeEngine {
         main::execute2(self, script_tree).await
     }
 
-    pub async fn commit(&mut self) -> io::Result<()> {
-        self.dm.commit().await
+    /// Reset temp.
+    pub async fn reset(&mut self) -> io::Result<()> {
+        self.dm.reset().await
     }
 }
 
@@ -841,10 +870,7 @@ impl EdgeEngine {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{
-        data::{AsDataManager, CacheDataManager, MemDataManager},
-        util::Path,
-    };
+    use crate::{data::MemDataManager, util::Path};
 
     use super::{EdgeEngine, ScriptTree1};
 
@@ -855,8 +881,7 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let dm = Arc::new(CacheDataManager::new(Arc::new(MemDataManager::new(None))));
-            let mut engine = EdgeEngine::new(dm.clone(), "root").await;
+            let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
             engine
                 .execute2(&ScriptTree1 {
                     script: vec![
@@ -868,9 +893,51 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            engine.commit().await.unwrap();
-            let rs = dm.get(&Path::from_str("test->test:test")).await.unwrap();
+            engine.reset().await.unwrap();
+            let rs = engine
+                .get_gloabl()
+                .get(&Path::from_str("test->test:test"))
+                .await
+                .unwrap();
             assert_eq!(rs.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_rec() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
+
+            let mut engine1 = engine.clone();
+            rt.spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                engine1
+                    .execute2(&ScriptTree1 {
+                        script: vec!["test->flag = 1 _".to_string()],
+                        name: "rs".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+                engine1.reset().await.unwrap();
+            });
+
+            let handle = rt.spawn(async move {
+                engine
+                    .execute2(&ScriptTree1 {
+                        script: vec!["_ while1 test->flag _".to_string()],
+                        name: "rs".to_string(),
+                        next_v: vec![],
+                    })
+                    .await
+                    .unwrap();
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            assert!(handle.is_finished());
         });
     }
 }

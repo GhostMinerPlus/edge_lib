@@ -28,7 +28,6 @@ mod main {
                     dm.set(&Path::from_str("id->name"), vec!["test".to_string()])
                         .await
                         .unwrap();
-                    dm.commit().await.unwrap();
                     let test = dm.get(&Path::from_str("test<-name")).await.unwrap();
                     let test1 = dm.get(&Path::from_str("root->web_server")).await.unwrap();
                     assert_eq!(test, test1);
@@ -55,7 +54,6 @@ mod main {
                     )
                     .await
                     .unwrap();
-                    dm.commit().await.unwrap();
                     let web_server = dm
                         .get(&Path::from_str("root->web_server->name"))
                         .await
@@ -107,10 +105,6 @@ impl AsDataManager for MemDataManager {
             }
             Ok(())
         })
-    }
-
-    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        Box::pin(future::ready(Ok(())))
     }
 
     fn append(

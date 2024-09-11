@@ -133,6 +133,24 @@ pub fn if_(
     }
 }
 
+pub fn if_0(
+    dm: Arc<dyn AsDataManager>,
+    output: Path,
+    input: Path,
+    input1: Path,
+) -> impl std::future::Future<Output = io::Result<()>> + Send {
+    async move {
+        let input_item_v = dm.get(&input).await?;
+        let input1_item_v = dm.get(&input1).await?;
+        let rs = if !input_item_v.is_empty() {
+            vec![]
+        } else {
+            input1_item_v
+        };
+        dm.set(&output, rs).await
+    }
+}
+
 pub fn if_1(
     dm: Arc<dyn AsDataManager>,
     output: Path,
