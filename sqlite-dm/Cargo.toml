@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-edge_trait = { path = "../edge_trait" }
+edge_lib = { path = ".." }
 log = "0.4.22"
 sqlx = { version = "0.8.2", features = ["sqlite", "runtime-tokio"] }
 

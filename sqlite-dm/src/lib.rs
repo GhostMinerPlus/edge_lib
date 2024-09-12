@@ -1,7 +1,7 @@
 use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite};
 use std::{future, io, pin::Pin, sync::Arc};
 
-use edge_trait::{
+use edge_lib::{
     data::{AsDataManager, Auth},
     util::Path,
 };
@@ -159,7 +159,7 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use edge_trait::engine::{EdgeEngine, ScriptTree1};
+    use edge_lib::engine::{EdgeEngine, ScriptTree1};
 
     use super::*;
 

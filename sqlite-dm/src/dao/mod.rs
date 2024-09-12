@@ -1,12 +1,12 @@
 use std::io::{self, Error, ErrorKind};
 
-use edge_trait::util::Path;
+use edge_lib::util::Path;
 use sqlx::{Sqlite, Pool, Row};
 
 mod main {
     use std::io;
 
-    use edge_trait::util::Step;
+    use edge_lib::util::Step;
     use sqlx::{Sqlite, Pool};
 
     pub async fn delete_edge_with_source_code(
@@ -60,7 +60,7 @@ mod main {
 
     #[cfg(test)]
     mod test_gen_sql {
-        use edge_trait::util::Step;
+        use edge_lib::util::Step;
 
         #[test]
         fn test_gen_sql() {
