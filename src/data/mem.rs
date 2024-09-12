@@ -28,7 +28,6 @@ mod main {
                     dm.set(&Path::from_str("id->name"), vec!["test".to_string()])
                         .await
                         .unwrap();
-                    dm.commit().await.unwrap();
                     let test = dm.get(&Path::from_str("test<-name")).await.unwrap();
                     let test1 = dm.get(&Path::from_str("root->web_server")).await.unwrap();
                     assert_eq!(test, test1);
@@ -55,7 +54,6 @@ mod main {
                     )
                     .await
                     .unwrap();
-                    dm.commit().await.unwrap();
                     let web_server = dm
                         .get(&Path::from_str("root->web_server->name"))
                         .await
@@ -99,7 +97,7 @@ impl AsDataManager for MemDataManager {
             let mut mem_table = this.mem_table.lock().await;
             match &this.auth {
                 Some(auth) => {
-                    for paper in auth {
+                    for paper in &auth.writer {
                         mem_table.clear_paper(paper);
                     }
                 }
@@ -107,10 +105,6 @@ impl AsDataManager for MemDataManager {
             }
             Ok(())
         })
-    }
-
-    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        Box::pin(future::ready(Ok(())))
     }
 
     fn append(
@@ -126,7 +120,7 @@ impl AsDataManager for MemDataManager {
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &this.auth {
-                if !auth.contains(&step.paper) {
+                if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
@@ -154,7 +148,7 @@ impl AsDataManager for MemDataManager {
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &this.auth {
-                if !auth.contains(&step.paper) {
+                if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
@@ -177,20 +171,21 @@ impl AsDataManager for MemDataManager {
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
-            if path.root.is_empty() {
+            if let Some(root) = &path.root_op {
+                return Box::pin(future::ready(Ok(vec![root.clone()])));
+            } else {
                 return Box::pin(future::ready(Ok(vec![])));
             }
-            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
         let this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             let mut mem_table = this.mem_table.lock().await;
-            let mut rs = vec![path.root.clone()];
+            let mut rs = vec![path.root_op.clone().unwrap()];
             while !path.step_v.is_empty() {
                 let step = path.step_v.remove(0);
                 if let Some(auth) = &this.auth {
-                    if !auth.contains(&step.paper) {
+                    if !auth.writer.contains(&step.paper) && !auth.reader.contains(&step.paper) {
                         return Err(io::Error::other("permision denied"));
                     }
                 }

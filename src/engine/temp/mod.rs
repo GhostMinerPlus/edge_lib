@@ -1,8 +1,11 @@
 use std::{future, io, pin::Pin, sync::Arc};
 
-use crate::util::{Path, PathPart};
+use crate::{
+    data::{Auth, MemDataManager},
+    util::{Path, PathPart},
+};
 
-use super::{AsDataManager, Auth, MemDataManager};
+use super::AsDataManager;
 
 #[derive(Clone)]
 pub struct TempDataManager {
@@ -17,6 +20,74 @@ impl TempDataManager {
             global,
             temp: Arc::new(MemDataManager::new(auth)),
         }
+    }
+
+    pub fn get_global(&self) -> Arc<dyn AsDataManager> {
+        self.global.clone()
+    }
+
+    pub async fn reset(&self) -> io::Result<()> {
+        self.temp.clear().await
+    }
+
+    pub fn while1(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = this.get(&path).await?;
+            loop {
+                for root in &root_v {
+                    let path = Path {
+                        root_op: Some(root.clone()),
+                        step_v: vec![step.clone()],
+                    };
+                    if path.is_temp() {
+                        if !this.temp.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    } else {
+                        if !this.global.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+    }
+
+    pub fn while0(
+        &self,
+        path: &Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        let this = self.clone();
+        let mut path = path.clone();
+        Box::pin(async move {
+            let step = path.step_v.pop().unwrap();
+            let root_v = this.get(&path).await?;
+            loop {
+                for root in &root_v {
+                    let path = Path {
+                        root_op: Some(root.clone()),
+                        step_v: vec![step.clone()],
+                    };
+                    if path.is_temp() {
+                        if this.temp.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    } else {
+                        if this.global.get(&path).await?.is_empty() {
+                            return Ok(());
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
     }
 }
 
@@ -53,7 +124,7 @@ impl AsDataManager for TempDataManager {
                     this.temp
                         .append(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -67,7 +138,7 @@ impl AsDataManager for TempDataManager {
                     this.global
                         .append(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -106,7 +177,7 @@ impl AsDataManager for TempDataManager {
                     this.temp
                         .set(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -126,7 +197,7 @@ impl AsDataManager for TempDataManager {
                     this.global
                         .set(
                             &Path {
-                                root: root.clone(),
+                                root_op: Some(root.clone()),
                                 step_v: vec![step.clone()],
                             },
                             item_v.clone(),
@@ -143,10 +214,11 @@ impl AsDataManager for TempDataManager {
         path: &Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
         if path.step_v.is_empty() {
-            if path.root.is_empty() {
+            if let Some(root) = &path.root_op {
+                return Box::pin(future::ready(Ok(vec![root.clone()])));
+            } else {
                 return Box::pin(future::ready(Ok(vec![])));
             }
-            return Box::pin(future::ready(Ok(vec![path.root.clone()])));
         }
         let this = self.clone();
         let path = path.clone();
@@ -159,7 +231,7 @@ impl AsDataManager for TempDataManager {
                     for root in item_v {
                         rs.extend(
                             this.get(&Path {
-                                root,
+                                root_op: Some(root),
                                 step_v: path.step_v[part_path.step_v.len()..].to_vec(),
                             })
                             .await?,
@@ -175,7 +247,7 @@ impl AsDataManager for TempDataManager {
                     for root in item_v {
                         rs.extend(
                             this.get(&Path {
-                                root,
+                                root_op: Some(root),
                                 step_v: path.step_v[part_path.step_v.len()..].to_vec(),
                             })
                             .await?,
@@ -201,14 +273,6 @@ impl AsDataManager for TempDataManager {
         Box::pin(async move {
             this.temp.clear().await?;
             this.global.clear().await
-        })
-    }
-
-    fn commit(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let this = self.clone();
-        Box::pin(async move {
-            this.temp.clear().await?;
-            this.global.commit().await
         })
     }
 }
