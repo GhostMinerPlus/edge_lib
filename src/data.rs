@@ -40,4 +40,15 @@ pub trait AsDataManager: Send + Sync {
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
 
     fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
+
+    #[allow(unused)]
+    fn call(
+        &self,
+        output: Path,
+        func: &str,
+        input: Path,
+        input1: Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        Box::pin(std::future::ready(Err(io::Error::other("Not found!"))))
+    }
 }

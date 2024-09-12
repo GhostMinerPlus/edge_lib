@@ -32,39 +32,45 @@ mod dep {
             )));
         }
         let func_mp = unsafe { ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
-        match func_mp.get(&func_name_v[0]) {
-            Some(func) => {
+        if let Err(_) = engine
+            .dm
+            .call(
+                inc.output.clone(),
+                &func_name_v[0],
+                inc.input.clone(),
+                inc.input1.clone(),
+            )
+            .await
+        {
+            if let Some(func) = func_mp.get(&func_name_v[0]) {
                 func.invoke(
-                    engine.dm.clone(),
+                    engine.dm,
                     inc.output.clone(),
                     inc.input.clone(),
                     inc.input1.clone(),
                 )
-                .await?;
-            }
-            None => {
-                if func_name_v[0] == "func" {
-                    // Return the names of all funtions.
-                    let mut rs = Vec::with_capacity(func_mp.len());
-                    for (name, _) in &*func_mp {
-                        rs.push(name.clone());
-                    }
-                    engine.dm.set(&inc.output, rs).await?;
-                } else if func_name_v[0] == "while1" {
-                    engine.dm.while1(&inc.input).await?;
-                } else if func_name_v[0] == "while0" {
-                    engine.dm.while0(&inc.input).await?;
-                } else {
-                    let input_item_v = engine.dm.get(&inc.input).await?;
-                    let input1_item_v = engine.dm.get(&inc.input1).await?;
-                    let inc_v = parse_script1(&func_name_v)?;
-                    let rs =
-                        invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
-                    engine.dm.set(&inc.output, rs).await?;
+                .await
+            } else if func_name_v[0] == "func" {
+                // Return the names of all funtions.
+                let mut rs = Vec::with_capacity(func_mp.len());
+                for (name, _) in &*func_mp {
+                    rs.push(name.clone());
                 }
+                engine.dm.set(&inc.output, rs).await
+            } else if func_name_v[0] == "while1" {
+                engine.dm.while1(&inc.input).await
+            } else if func_name_v[0] == "while0" {
+                engine.dm.while0(&inc.input).await
+            } else {
+                let input_item_v = engine.dm.get(&inc.input).await?;
+                let input1_item_v = engine.dm.get(&inc.input1).await?;
+                let inc_v = parse_script1(&func_name_v)?;
+                let rs = invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
+                engine.dm.set(&inc.output, rs).await
             }
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
