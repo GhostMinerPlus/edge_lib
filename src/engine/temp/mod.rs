@@ -10,7 +10,7 @@ use super::AsDataManager;
 #[derive(Clone)]
 pub struct TempDataManager {
     global: Arc<dyn AsDataManager>,
-    temp: Arc<dyn AsDataManager>,
+    temp: Arc<MemDataManager>,
 }
 
 impl TempDataManager {
@@ -99,7 +99,7 @@ impl AsDataManager for TempDataManager {
     fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
         Arc::new(Self {
             global: self.global.divide(auth.clone()),
-            temp: self.temp.divide(auth),
+            temp: Arc::new(MemDataManager::new(auth)),
         })
     }
 
@@ -274,5 +274,15 @@ impl AsDataManager for TempDataManager {
             this.temp.clear().await?;
             this.global.clear().await
         })
+    }
+
+    fn call(
+        &self,
+        output: Path,
+        func: &str,
+        input: Path,
+        input1: Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+        self.global.call(output, func, input, input1)
     }
 }

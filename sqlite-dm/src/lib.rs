@@ -1,4 +1,4 @@
-use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite};
+use sqlx::{Pool, Sqlite};
 use std::{future, io, pin::Pin, sync::Arc};
 
 use edge_lib::{
@@ -25,21 +25,12 @@ pub struct SqliteDataManager {
 }
 
 impl SqliteDataManager {
-    pub async fn from_file(file: &str, auth: Auth) -> Self {
-        let pool = sqlx::SqlitePool::connect_with(SqliteConnectOptions::new().filename(file))
-            .await
-            .unwrap();
+    pub fn new(pool: Pool<Sqlite>, auth: Auth) -> Self {
         Self { pool, auth }
     }
 
-    pub async fn create(file: &str, auth: Auth) -> io::Result<Self> {
-        std::fs::File::create_new(file)?;
-        let this = Self::from_file(file, auth).await;
-        sqlx::query(INIT_SQL)
-            .execute(&this.pool)
-            .await
-            .map_err(|e| io::Error::other(e))?;
-        Ok(this)
+    pub async fn init(&self) {
+        sqlx::query(INIT_SQL).execute(&self.pool).await.unwrap();
     }
 }
 
@@ -160,6 +151,7 @@ impl AsDataManager for SqliteDataManager {
 #[cfg(test)]
 mod tests {
     use edge_lib::engine::{EdgeEngine, ScriptTree1};
+    use sqlx::sqlite::SqliteConnectOptions;
 
     use super::*;
 
@@ -170,7 +162,12 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let dm = Arc::new(SqliteDataManager::from_file("test.db", None).await);
+            let pool =
+                sqlx::SqlitePool::connect_with(SqliteConnectOptions::new().filename("test.db"))
+                    .await
+                    .unwrap();
+            let dm = Arc::new(SqliteDataManager::new(pool, None));
+            dm.init().await;
             let mut engine = EdgeEngine::new(dm, "root").await;
             engine
                 .execute2(&ScriptTree1 {
