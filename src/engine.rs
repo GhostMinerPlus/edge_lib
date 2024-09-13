@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, Weak};
 use std::{io, sync::Arc};
 
+use crate::computed::Computed;
 use crate::data::PermissionPair;
 use crate::util::Path;
 use crate::{data::AsDataManager, func};
@@ -49,28 +51,47 @@ mod dep {
                     inc.input.clone(),
                     inc.input1.clone(),
                 )
-                .await
+                .await?;
             } else if func_name_v[0] == "func" {
                 // Return the names of all funtions.
                 let mut rs = Vec::with_capacity(func_mp.len());
                 for (name, _) in &*func_mp {
                     rs.push(name.clone());
                 }
-                engine.dm.set(&inc.output, rs).await
+                engine.dm.set(&inc.output, rs).await?;
             } else if func_name_v[0] == "while1" {
-                engine.dm.while1(&inc.input).await
+                engine.dm.while1(&inc.input).await?;
             } else if func_name_v[0] == "while0" {
-                engine.dm.while0(&inc.input).await
+                engine.dm.while0(&inc.input).await?;
             } else {
                 let input_item_v = engine.dm.get(&inc.input).await?;
                 let input1_item_v = engine.dm.get(&inc.input1).await?;
                 let inc_v = parse_script1(&func_name_v)?;
                 let rs = invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
-                engine.dm.set(&inc.output, rs).await
+                engine.dm.set(&inc.output, rs).await?;
             }
-        } else {
-            Ok(())
         }
+        if let Some(step) = inc.output.step_v.last() {
+            let k = if step.paper.is_empty() {
+                step.code.clone()
+            } else {
+                format!("{}:{}", step.paper, step.code)
+            };
+            let mut listener_mp = engine.listener_mp.lock().unwrap();
+            if let Some(arr) = listener_mp.get_mut(&k) {
+                let mut i = 0;
+                while i < arr.len() {
+                    if let Some(item) = arr[i].upgrade() {
+                        *item.lock().unwrap() = false;
+                    } else {
+                        arr.remove(i);
+                        continue;
+                    }
+                    i += 1;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
@@ -379,7 +400,11 @@ mod dep {
 }
 
 mod main {
-    use std::{io, sync::Arc};
+    use std::{
+        collections::HashMap,
+        io,
+        sync::{Arc, Mutex},
+    };
 
     use crate::{data::AsDataManager, func};
 
@@ -389,6 +414,7 @@ mod main {
         super::dep::lazy_mp();
         EdgeEngine {
             dm: Arc::new(temp::TempDataManager::new(dm)),
+            listener_mp: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -750,6 +776,7 @@ pub struct ScriptTree1 {
 #[derive(Clone)]
 pub struct EdgeEngine {
     dm: Arc<temp::TempDataManager>,
+    listener_mp: Arc<Mutex<HashMap<String, Vec<Weak<Mutex<bool>>>>>>,
 }
 
 impl EdgeEngine {
@@ -818,6 +845,7 @@ impl EdgeEngine {
     pub fn divide(&self) -> Self {
         Self {
             dm: Arc::new(temp::TempDataManager::new(self.dm.get_global())),
+            listener_mp: self.listener_mp.clone(),
         }
     }
 
@@ -866,9 +894,39 @@ impl EdgeEngine {
         main::execute2(self, script_tree).await
     }
 
+    pub async fn execute_script(&mut self, script: &[String]) -> io::Result<Vec<String>> {
+        dep::invoke_inc_v(self.clone(), vec![], vec![], dep::parse_script1(script)?).await
+    }
+
     /// Reset temp.
     pub async fn reset(&mut self) -> io::Result<()> {
         self.dm.reset().await
+    }
+
+    pub fn register<T>(
+        &mut self,
+        code_v: Vec<String>,
+        script: Vec<String>,
+        default_value: T,
+        is_latest: bool,
+    ) -> Computed<T> {
+        let is_latest = Arc::new(Mutex::new(is_latest));
+        let mut listener_mp = self.listener_mp.lock().unwrap();
+        for code in code_v {
+            let w = Arc::downgrade(&is_latest);
+            match listener_mp.get_mut(&code) {
+                Some(arr) => arr.push(w),
+                None => {
+                    listener_mp.insert(code, vec![w]);
+                }
+            }
+        }
+        Computed {
+            is_latest,
+            script,
+            cache: default_value,
+            engine: self.clone(),
+        }
     }
 }
 
@@ -944,6 +1002,29 @@ mod tests {
             });
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             assert!(handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_is_latest() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
+
+            let c = engine.register(vec!["test".to_string()], vec![], 1, true);
+            assert_eq!(*c.is_latest.lock().unwrap(), true);
+            engine
+                .execute2(&ScriptTree1 {
+                    script: vec!["root->test + 1 1".to_string()],
+                    name: "rs".to_string(),
+                    next_v: vec![],
+                })
+                .await
+                .unwrap();
+            assert_eq!(*c.is_latest.lock().unwrap(), false);
         });
     }
 }
