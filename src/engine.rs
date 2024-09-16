@@ -866,6 +866,11 @@ impl EdgeEngine {
         main::execute2(self, script_tree).await
     }
 
+    pub async fn execute_script(&self, script: &Vec<String>) -> io::Result<Vec<String>> {
+        let inc_v = dep::parse_script1(script)?;
+        dep::invoke_inc_v(self.clone(), vec![], vec![], inc_v).await
+    }
+
     /// Reset temp.
     pub async fn reset(&mut self) -> io::Result<()> {
         self.dm.reset().await
