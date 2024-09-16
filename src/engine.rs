@@ -811,6 +811,14 @@ impl EdgeEngine {
         main::new_engine(dm)
     }
 
+    pub fn get_dm(&self) -> Arc<dyn AsDataManager> {
+        self.dm.clone()
+    }
+
+    pub fn get_temp(&self) -> Arc<dyn AsDataManager> {
+        self.dm.get_temp()
+    }
+
     pub fn get_gloabl(&self) -> Arc<dyn AsDataManager> {
         self.dm.get_global()
     }
@@ -866,7 +874,7 @@ impl EdgeEngine {
         main::execute2(self, script_tree).await
     }
 
-    pub async fn execute_script(&self, script: &Vec<String>) -> io::Result<Vec<String>> {
+    pub async fn execute_script(&mut self, script: &Vec<String>) -> io::Result<Vec<String>> {
         let inc_v = dep::parse_script1(script)?;
         dep::invoke_inc_v(self.clone(), vec![], vec![], inc_v).await
     }

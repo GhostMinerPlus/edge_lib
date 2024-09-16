@@ -22,6 +22,10 @@ impl TempDataManager {
         }
     }
 
+    pub fn get_temp(&self) -> Arc<dyn AsDataManager> {
+        self.temp.clone()
+    }
+
     pub fn get_global(&self) -> Arc<dyn AsDataManager> {
         self.global.clone()
     }
