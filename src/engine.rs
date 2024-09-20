@@ -258,32 +258,25 @@ mod dep {
             if inc_v.is_empty() {
                 return Ok(vec![]);
             }
-            let root = gen_value();
             let (engine, inc) = {
                 let mut inc_v = inc_v;
                 let mut last_inc = inc_v.pop().unwrap();
                 let engine = engine.divide();
                 engine
                     .dm
-                    .append(&Path::from_str(&format!("{root}->$:input")), input_item_v)
+                    .append(&Path::from_str(&format!("$->$:input")), input_item_v)
                     .await?;
                 engine
                     .dm
-                    .append(&Path::from_str(&format!("{root}->$:input1")), input1_item_v)
+                    .append(&Path::from_str(&format!("$->$:input1")), input1_item_v)
                     .await?;
                 log::debug!("inc_v.len(): {}", inc_v.len());
                 for mut inc in inc_v {
-                    unwrap_value(&root, &mut inc.output);
-                    unwrap_value(&root, &mut inc.function);
-                    unwrap_value(&root, &mut inc.input);
-                    unwrap_value(&root, &mut inc.input1);
+                    unwrap_inc(&mut inc);
                     invoke_inc(engine.clone(), &inc).await?;
                 }
                 let engine1 = engine.divide();
-                unwrap_value(&root, &mut last_inc.output);
-                unwrap_value(&root, &mut last_inc.function);
-                unwrap_value(&root, &mut last_inc.input);
-                unwrap_value(&root, &mut last_inc.input1);
+                unwrap_inc(&mut last_inc);
                 if engine1.dm.get(&last_inc.output).await?.is_empty() {
                     engine1
                         .dm
@@ -313,7 +306,7 @@ mod dep {
             invoke_inc(engine.clone(), &inc).await?;
             engine
                 .dm
-                .get(&Path::from_str(&format!("{root}->$:output")))
+                .get(&Path::from_str(&format!("$->$:output")))
                 .await
         }
     }
@@ -358,14 +351,21 @@ mod dep {
         drop(lk);
     }
 
-    pub fn unwrap_value(root: &str, path: &mut Path) {
+    #[inline]
+    pub fn unwrap_value(path: &mut Path) {
         if let Some(path_root) = &mut path.root_op {
-            if path_root == "$" {
-                *path_root = root.to_string();
-            } else if path_root == "?" && path.step_v.is_empty() {
+            if path_root == "?" && path.step_v.is_empty() {
                 *path_root = gen_value();
             }
         }
+    }
+
+    #[inline]
+    pub fn unwrap_inc(inc: &mut Inc) {
+        unwrap_value(&mut inc.output);
+        unwrap_value(&mut inc.function);
+        unwrap_value(&mut inc.input);
+        unwrap_value(&mut inc.input1);
     }
 
     pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
