@@ -150,7 +150,7 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use edge_lib::engine::{EdgeEngine, ScriptTree1};
+    use edge_lib::{data::TempDataManager, engine::{EdgeEngine, ScriptTree1}};
     use sqlx::sqlite::SqliteConnectOptions;
 
     use super::*;
@@ -168,7 +168,7 @@ mod tests {
                     .unwrap();
             let dm = Arc::new(SqliteDataManager::new(pool, None));
             dm.init().await;
-            let mut engine = EdgeEngine::new(dm, "root").await;
+            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
             engine
                 .execute2(&ScriptTree1 {
                     script: vec!["root->type = user _".to_string()],
@@ -177,10 +177,10 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            engine.reset().await.unwrap();
+            engine.reset();
 
             let rs = engine
-                .get_gloabl()
+                .get_dm()
                 .get(&Path::from_str("root->type"))
                 .await
                 .unwrap();

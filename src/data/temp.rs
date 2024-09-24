@@ -7,6 +7,8 @@ use crate::{
 
 use super::AsDataManager;
 
+mod func;
+
 #[derive(Clone)]
 pub struct TempDataManager {
     global: Arc<dyn AsDataManager>,
@@ -280,13 +282,62 @@ impl AsDataManager for TempDataManager {
         })
     }
 
-    fn call(
-        &self,
+    fn call<'a, 'a1, 'f>(
+        &'a self,
         output: Path,
-        func: &str,
+        func: &'a1 str,
         input: Path,
         input1: Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        self.global.call(output, func, input, input1)
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            if let Ok(()) = self
+                .global
+                .call(output.clone(), func, input.clone(), input1.clone())
+                .await
+            {
+                return Ok(());
+            }
+            match func {
+                "new" => func::new(self, output, input, input1).await,
+                "line" => func::line(self, output, input, input1).await,
+                "rand" => func::rand(self, output, input, input1).await,
+                //
+                "append" => func::append(self, output, input, input1).await,
+                "distinct" => func::distinct(self, output, input, input1).await,
+                "left" => func::left(self, output, input, input1).await,
+                "inner" => func::inner(self, output, input, input1).await,
+                "if" => func::if_(self, output, input, input1).await,
+                "if0" => func::if_0(self, output, input, input1).await,
+                "if1" => func::if_1(self, output, input, input1).await,
+                //
+                "+" => func::add(self, output, input, input1).await,
+                "-" => func::minus(self, output, input, input1).await,
+                "*" => func::mul(self, output, input, input1).await,
+                "/" => func::div(self, output, input, input1).await,
+                "%" => func::rest(self, output, input, input1).await,
+                //
+                "==" => func::equal(self, output, input, input1).await,
+                "!=" => func::not_equal(self, output, input, input1).await,
+                ">" => func::greater(self, output, input, input1).await,
+                "<" => func::smaller(self, output, input, input1).await,
+                //
+                "count" => func::count(self, output, input, input1).await,
+                "sum" => func::sum(self, output, input, input1).await,
+                //
+                "=" => func::set(self, output, input, input1).await,
+                //
+                "slice" => func::slice(self, output, input, input1).await,
+                "sort" => func::sort(self, output, input, input1).await,
+                "sort_s" => func::sort_s(self, output, input, input1).await,
+                // while
+                "while0" => self.while0(&input).await,
+                "while1" => self.while1(&input).await,
+                _ => Err(io::Error::other("Not found!")),
+            }
+        })
     }
 }

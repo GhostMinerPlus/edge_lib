@@ -3,8 +3,10 @@ use std::{collections::HashSet, io, pin::Pin, sync::Arc};
 use crate::util::Path;
 
 mod mem;
+mod temp;
 
 pub use mem::*;
+pub use temp::*;
 
 pub type Auth = Option<PermissionPair>;
 
@@ -42,13 +44,17 @@ pub trait AsDataManager: Send + Sync {
     fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
 
     #[allow(unused)]
-    fn call(
-        &self,
+    fn call<'a, 'a1, 'f>(
+        &'a self,
         output: Path,
-        func: &str,
+        func: &'a1 str,
         input: Path,
         input1: Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         Box::pin(std::future::ready(Err(io::Error::other("Not found!"))))
     }
 }

@@ -1,21 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::{io, sync::Arc};
+use std::{collections::HashSet, io, sync::Arc};
 
-use crate::data::PermissionPair;
+use crate::data::{AsDataManager, PermissionPair};
 use crate::util::Path;
-use crate::{data::AsDataManager, func};
 
 mod dep {
-    use std::{collections::HashMap, io, sync::Mutex};
-
-    use tokio::sync::RwLock;
+    use std::io;
 
     use super::{EdgeEngine, Inc, ScriptTree, ScriptTree1};
-    use crate::{data::AsDataManager, func, util::Path};
-
-    static mut ENGINE_FUNC_MAP_OP: Option<RwLock<HashMap<String, Box<dyn func::AsFunc>>>> = None;
-    static mut ENGINE_FUNC_MAP_OP_LOCK: Mutex<()> = Mutex::new(());
+    use crate::util::Path;
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
@@ -31,7 +24,6 @@ mod dep {
                 inc.function.to_string()
             )));
         }
-        let func_mp = unsafe { ENGINE_FUNC_MAP_OP.as_ref().unwrap().read().await };
         if let Err(_) = engine
             .dm
             .call(
@@ -42,44 +34,14 @@ mod dep {
             )
             .await
         {
-            if let Some(func) = func_mp.get(&func_name_v[0]) {
-                func.invoke(
-                    engine.dm,
-                    inc.output.clone(),
-                    inc.input.clone(),
-                    inc.input1.clone(),
-                )
-                .await
-            } else if func_name_v[0] == "func" {
-                // Return the names of all funtions.
-                let mut rs = Vec::with_capacity(func_mp.len());
-                for (name, _) in &*func_mp {
-                    rs.push(name.clone());
-                }
-                engine.dm.set(&inc.output, rs).await
-            } else if func_name_v[0] == "while1" {
-                engine.dm.while1(&inc.input).await
-            } else if func_name_v[0] == "while0" {
-                engine.dm.while0(&inc.input).await
-            } else {
-                let input_item_v = engine.dm.get(&inc.input).await?;
-                let input1_item_v = engine.dm.get(&inc.input1).await?;
-                let inc_v = parse_script1(&func_name_v)?;
-                let rs = invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
-                engine.dm.set(&inc.output, rs).await
-            }
+            let input_item_v = engine.dm.get(&inc.input).await?;
+            let input1_item_v = engine.dm.get(&inc.input1).await?;
+            let inc_v = parse_script1(&func_name_v)?;
+            let rs = invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
+            engine.dm.set(&inc.output, rs).await
         } else {
             Ok(())
         }
-    }
-
-    pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
-        lazy_mp();
-        let mut w_mp = unsafe { ENGINE_FUNC_MAP_OP.as_ref().unwrap().write() }.await;
-        match func_op {
-            Some(func) => w_mp.insert(name.to_string(), func),
-            None => w_mp.remove(name),
-        };
     }
 
     #[async_recursion::async_recursion]
@@ -151,52 +113,12 @@ mod dep {
     }
 
     pub fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
-        let mut inc_v = Vec::new();
-        for line in script.lines() {
-            if line.is_empty() {
-                continue;
-            }
-
-            let word_v: Vec<&str> = line.split(' ').collect();
-            if word_v.len() < 4 {
-                return Err(io::Error::other(
-                    "when parse_script:\n\tless than 4 words in a line",
-                ));
-            }
-            if word_v.len() == 5 {
-                if word_v[1] == "=" {
-                    inc_v.push(Inc {
-                        output: Path::from_str(word_v[0].trim()),
-                        function: Path::from_str(word_v[2].trim()),
-                        input: Path::from_str(word_v[3].trim()),
-                        input1: Path::from_str(word_v[4].trim()),
-                    });
-                } else if word_v[1] == "+=" {
-                    inc_v.push(Inc {
-                        output: Path::from_str("$->$:temp"),
-                        function: Path::from_str(word_v[2].trim()),
-                        input: Path::from_str(word_v[3].trim()),
-                        input1: Path::from_str(word_v[4].trim()),
-                    });
-                    inc_v.push(Inc {
-                        output: Path::from_str(word_v[0].trim()),
-                        function: Path::from_str("append"),
-                        input: Path::from_str(word_v[0].trim()),
-                        input1: Path::from_str("$->$:temp"),
-                    });
-                } else {
-                    return Err(io::Error::other("when parse_script:\n\tunknown operator"));
-                }
-                continue;
-            }
-            inc_v.push(Inc {
-                output: Path::from_str(word_v[0].trim()),
-                function: Path::from_str(word_v[1].trim()),
-                input: Path::from_str(word_v[2].trim()),
-                input1: Path::from_str(word_v[3].trim()),
-            });
-        }
-        Ok(inc_v)
+        parse_script1(
+            &script
+                .lines()
+                .map(|line| line.to_string())
+                .collect::<Vec<String>>(),
+        )
     }
 
     pub fn parse_script1(script: &[String]) -> io::Result<Vec<Inc>> {
@@ -311,46 +233,6 @@ mod dep {
         }
     }
 
-    pub fn lazy_mp() {
-        let lk = unsafe { ENGINE_FUNC_MAP_OP_LOCK.lock().unwrap() };
-        if unsafe { ENGINE_FUNC_MAP_OP.is_none() } {
-            let mut func_mp: HashMap<String, Box<dyn func::AsFunc>> = HashMap::new();
-            func_mp.insert("new".to_string(), Box::new(func::new));
-            func_mp.insert("line".to_string(), Box::new(func::line));
-            func_mp.insert("rand".to_string(), Box::new(func::rand));
-            //
-            func_mp.insert("append".to_string(), Box::new(func::append));
-            func_mp.insert("distinct".to_string(), Box::new(func::distinct));
-            func_mp.insert("left".to_string(), Box::new(func::left));
-            func_mp.insert("inner".to_string(), Box::new(func::inner));
-            func_mp.insert("if".to_string(), Box::new(func::if_));
-            func_mp.insert("if0".to_string(), Box::new(func::if_0));
-            func_mp.insert("if1".to_string(), Box::new(func::if_1));
-            //
-            func_mp.insert("+".to_string(), Box::new(func::add));
-            func_mp.insert("-".to_string(), Box::new(func::minus));
-            func_mp.insert("*".to_string(), Box::new(func::mul));
-            func_mp.insert("/".to_string(), Box::new(func::div));
-            func_mp.insert("%".to_string(), Box::new(func::rest));
-            //
-            func_mp.insert("==".to_string(), Box::new(func::equal));
-            func_mp.insert("!=".to_string(), Box::new(func::not_equal));
-            func_mp.insert(">".to_string(), Box::new(func::greater));
-            func_mp.insert("<".to_string(), Box::new(func::smaller));
-            //
-            func_mp.insert("count".to_string(), Box::new(func::count));
-            func_mp.insert("sum".to_string(), Box::new(func::sum));
-            //
-            func_mp.insert("=".to_string(), Box::new(func::set));
-            //
-            func_mp.insert("slice".to_string(), Box::new(func::slice));
-            func_mp.insert("sort".to_string(), Box::new(func::sort));
-            func_mp.insert("sort_s".to_string(), Box::new(func::sort_s));
-            unsafe { ENGINE_FUNC_MAP_OP = Some(RwLock::new(func_mp)) };
-        }
-        drop(lk);
-    }
-
     #[inline]
     pub fn unwrap_value(path: &mut Path) {
         if let Some(path_root) = &mut path.root_op {
@@ -381,15 +263,12 @@ mod dep {
 mod main {
     use std::{io, sync::Arc};
 
-    use crate::{data::AsDataManager, func};
+    use crate::data::AsDataManager;
 
-    use super::{temp, EdgeEngine, ScriptTree, ScriptTree1};
+    use super::{EdgeEngine, ScriptTree, ScriptTree1};
 
     pub fn new_engine(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
-        super::dep::lazy_mp();
-        EdgeEngine {
-            dm: Arc::new(temp::TempDataManager::new(dm)),
-        }
+        EdgeEngine { dm }
     }
 
     /// 执行脚本树
@@ -407,7 +286,7 @@ mod main {
         use std::sync::Arc;
 
         use crate::{
-            data::MemDataManager,
+            data::{MemDataManager, TempDataManager},
             engine::{main, EdgeEngine, ScriptTree},
         };
 
@@ -415,7 +294,7 @@ mod main {
         fn test() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(dm, "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -435,7 +314,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                engine.reset().await.unwrap();
+                engine.reset();
                 let rs = &rs["root"]["then"];
                 assert_eq!(rs.len(), 100);
                 assert_eq!(rs[0].len(), 200);
@@ -453,7 +332,7 @@ mod main {
             //     .init();
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(dm.clone(), "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -486,7 +365,7 @@ mod main {
         fn test_if() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(dm, "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -515,11 +394,11 @@ mod main {
         fn test_space() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(dm, "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
-                        script: ["$->$:output = = '1\\s' _"].join("\n"),
+                        script: ["$->$:output = '1\\s' _"].join("\n"),
                         name: "result".to_string(),
                         next_v: vec![],
                     },
@@ -540,7 +419,7 @@ mod main {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
 
-                let mut engine = EdgeEngine::new(dm, "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -551,7 +430,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                engine.reset().await.unwrap();
+                engine.reset();
 
                 let rs = main::execute1(
                     &mut engine,
@@ -563,7 +442,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                engine.reset().await.unwrap();
+                engine.reset();
 
                 assert_eq!(rs["result"].len(), 2);
             };
@@ -578,7 +457,7 @@ mod main {
         fn test_set() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(dm.clone(), "root").await;
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -599,7 +478,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                engine.reset().await.unwrap();
+                engine.reset();
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -620,7 +499,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                engine.reset().await.unwrap();
+                engine.reset();
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -643,7 +522,8 @@ mod main {
         #[test]
         fn test_set_proxy() {
             let task = async {
-                let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
+                let dm = Arc::new(MemDataManager::new(None));
+                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -660,7 +540,7 @@ mod main {
                 )
                 .await
                 .unwrap();
-                engine.reset().await.unwrap();
+                engine.reset();
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -677,7 +557,7 @@ mod main {
                 .await
                 .unwrap();
                 assert_eq!(rs["result"].len(), 1);
-                engine.reset().await.unwrap();
+                engine.reset();
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -708,11 +588,6 @@ mod main {
         Ok(out_tree)
     }
 
-    /// 配置函数
-    pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
-        super::dep::set_func(name, func_op).await
-    }
-
     /// 参数转换
     pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
         let script = format!("{}\n{}", script_tree.script, script_tree.name);
@@ -722,8 +597,6 @@ mod main {
         json
     }
 }
-
-mod temp;
 
 #[derive(Clone, Debug)]
 pub struct Inc {
@@ -749,7 +622,7 @@ pub struct ScriptTree1 {
 
 #[derive(Clone)]
 pub struct EdgeEngine {
-    dm: Arc<temp::TempDataManager>,
+    dm: Arc<dyn AsDataManager>,
 }
 
 impl EdgeEngine {
@@ -815,22 +688,10 @@ impl EdgeEngine {
         self.dm.clone()
     }
 
-    pub fn get_temp(&self) -> Arc<dyn AsDataManager> {
-        self.dm.get_temp()
-    }
-
-    pub fn get_gloabl(&self) -> Arc<dyn AsDataManager> {
-        self.dm.get_global()
-    }
-
     pub fn divide(&self) -> Self {
         Self {
-            dm: Arc::new(temp::TempDataManager::new(self.dm.get_global())),
+            dm: self.dm.divide(self.dm.get_auth().clone()),
         }
-    }
-
-    pub async fn divide_with_user(&self, user: &str) -> Self {
-        Self::new(self.dm.get_global(), user).await
     }
 
     pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
@@ -856,10 +717,6 @@ impl EdgeEngine {
         main::tree_2_entry(script_tree)
     }
 
-    pub async fn set_func(name: &str, func_op: Option<Box<dyn func::AsFunc>>) {
-        main::set_func(name, func_op).await
-    }
-
     pub async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
         let (script_str, next_v_json) = script_tree.entries().next().unwrap();
         let script_tree = Self::entry_2_tree(script_str, next_v_json);
@@ -879,9 +736,8 @@ impl EdgeEngine {
         dep::invoke_inc_v(self.clone(), vec![], vec![], inc_v).await
     }
 
-    /// Reset temp.
-    pub async fn reset(&mut self) -> io::Result<()> {
-        self.dm.reset().await
+    pub fn reset(&mut self) {
+        self.dm = self.dm.divide(self.dm.get_auth().clone());
     }
 }
 
@@ -889,7 +745,10 @@ impl EdgeEngine {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{data::MemDataManager, util::Path};
+    use crate::{
+        data::{MemDataManager, TempDataManager},
+        util::Path,
+    };
 
     use super::{EdgeEngine, ScriptTree1};
 
@@ -900,7 +759,8 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
+            let dm = Arc::new(MemDataManager::new(None));
+            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
             engine
                 .execute2(&ScriptTree1 {
                     script: vec![
@@ -912,9 +772,9 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            engine.reset().await.unwrap();
+            engine.reset();
             let rs = engine
-                .get_gloabl()
+                .get_dm()
                 .get(&Path::from_str("test->test:test"))
                 .await
                 .unwrap();
@@ -929,7 +789,8 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let mut engine = EdgeEngine::new(Arc::new(MemDataManager::new(None)), "root").await;
+            let dm = Arc::new(MemDataManager::new(None));
+            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
 
             let mut engine1 = engine.clone();
             rt.spawn(async move {
@@ -942,7 +803,7 @@ mod tests {
                     })
                     .await
                     .unwrap();
-                engine1.reset().await.unwrap();
+                engine1.reset();
             });
 
             let handle = rt.spawn(async move {
