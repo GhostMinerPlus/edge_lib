@@ -22,39 +22,37 @@ pub trait AsDataManager: Send + Sync {
     fn get_auth(&self) -> &Auth;
 
     /// Get all targets from `source->code`
-    fn append(
-        &self,
-        path: &Path,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    /// Get all targets from `source->code`
-    fn set(
-        &self,
-        path: &Path,
-        item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    /// Get all targets from `source->code`
-    fn get(
-        &self,
-        path: &Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>>;
-
-    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>>;
-
-    #[allow(unused)]
-    fn call<'a, 'a1, 'f>(
+    fn append<'a, 'a1, 'f>(
         &'a self,
-        output: Path,
-        func: &'a1 str,
-        input: Path,
-        input1: Path,
+        path: &'a1 Path,
+        item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
     where
         'a: 'f,
-        'a1: 'f,
-    {
-        Box::pin(std::future::ready(Err(io::Error::other("Not found!"))))
-    }
+        'a1: 'f;
+
+    /// Get all targets from `source->code`
+    fn set<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+        item_v: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f;
+
+    /// Get all targets from `source->code`
+    fn get<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f;
+
+    fn clear<'a, 'f>(
+        &'a self,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f;
 }

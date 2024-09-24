@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, io, sync::Arc};
 
-use crate::data::{AsDataManager, PermissionPair};
+use crate::data::{AsTempDataManager, PermissionPair};
 use crate::util::Path;
 
 mod dep {
     use std::io;
 
     use super::{EdgeEngine, Inc, ScriptTree, ScriptTree1};
-    use crate::util::Path;
+    use crate::{data::AsDataManager, util::Path};
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
@@ -263,11 +263,11 @@ mod dep {
 mod main {
     use std::{io, sync::Arc};
 
-    use crate::data::AsDataManager;
+    use crate::data::AsTempDataManager;
 
     use super::{EdgeEngine, ScriptTree, ScriptTree1};
 
-    pub fn new_engine(dm: Arc<dyn AsDataManager>) -> EdgeEngine {
+    pub fn new_engine(dm: Arc<dyn AsTempDataManager>) -> EdgeEngine {
         EdgeEngine { dm }
     }
 
@@ -622,7 +622,7 @@ pub struct ScriptTree1 {
 
 #[derive(Clone)]
 pub struct EdgeEngine {
-    dm: Arc<dyn AsDataManager>,
+    dm: Arc<dyn AsTempDataManager>,
 }
 
 impl EdgeEngine {
@@ -630,7 +630,7 @@ impl EdgeEngine {
     /// # Parameters
     /// - dm: data manager in root
     /// - writer: writer
-    pub async fn new(dm: Arc<dyn AsDataManager>, user: &str) -> Self {
+    pub async fn new(dm: Arc<dyn AsTempDataManager>, user: &str) -> Self {
         let dm = if user == "root" {
             dm
         } else {
@@ -676,21 +676,24 @@ impl EdgeEngine {
                 .into_iter()
                 .map(|item| item.as_str().unwrap().to_string())
                 .collect::<HashSet<String>>();
-            dm.divide(Some(PermissionPair {
-                writer: writer_set,
-                reader: reader_set,
-            }))
+            AsTempDataManager::divide(
+                dm.as_ref(),
+                Some(PermissionPair {
+                    writer: writer_set,
+                    reader: reader_set,
+                }),
+            )
         };
         main::new_engine(dm)
     }
 
-    pub fn get_dm(&self) -> Arc<dyn AsDataManager> {
+    pub fn get_dm(&self) -> Arc<dyn AsTempDataManager> {
         self.dm.clone()
     }
 
     pub fn divide(&self) -> Self {
         Self {
-            dm: self.dm.divide(self.dm.get_auth().clone()),
+            dm: AsTempDataManager::divide(self.dm.as_ref(), self.dm.get_auth().clone()),
         }
     }
 
@@ -737,7 +740,7 @@ impl EdgeEngine {
     }
 
     pub fn reset(&mut self) {
-        self.dm = self.dm.divide(self.dm.get_auth().clone());
+        self.dm = AsTempDataManager::divide(self.dm.as_ref(), self.dm.get_auth().clone());
     }
 }
 
@@ -746,7 +749,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        data::{MemDataManager, TempDataManager},
+        data::{AsDataManager, MemDataManager, TempDataManager},
         util::Path,
     };
 

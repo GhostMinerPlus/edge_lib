@@ -46,53 +46,59 @@ impl AsDataManager for SqliteDataManager {
         })
     }
 
-    fn append(
-        &self,
-        path: &Path,
+    fn append<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
-            if let Some(auth) = &this.auth {
+            if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
-            let root_v = this.get(&path).await?;
+            let root_v = self.get(&path).await?;
             for source in &root_v {
-                dao::insert_edge(this.pool.clone(), source, &step.paper, &step.code, &item_v)
+                dao::insert_edge(self.pool.clone(), source, &step.paper, &step.code, &item_v)
                     .await?;
             }
             Ok(())
         })
     }
 
-    fn set(
-        &self,
-        path: &Path,
+    fn set<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let this = self.clone();
         let mut path = path.clone();
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
-            if let Some(auth) = &this.auth {
+            if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
-            let root_v = this.get(&path).await?;
+            let root_v = self.get(&path).await?;
             for source in &root_v {
                 dao::delete_edge_with_source_code(
-                    this.pool.clone(),
+                    self.pool.clone(),
                     &step.paper,
                     source,
                     &step.code,
@@ -100,17 +106,21 @@ impl AsDataManager for SqliteDataManager {
                 .await?;
             }
             for source in &root_v {
-                dao::insert_edge(this.pool.clone(), source, &step.paper, &step.code, &item_v)
+                dao::insert_edge(self.pool.clone(), source, &step.paper, &step.code, &item_v)
                     .await?;
             }
             Ok(())
         })
     }
 
-    fn get(
-        &self,
-        path: &Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
+    fn get<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         if path.step_v.is_empty() {
             if let Some(root) = &path.root_op {
                 return Box::pin(future::ready(Ok(vec![root.clone()])));
@@ -118,31 +128,34 @@ impl AsDataManager for SqliteDataManager {
                 return Box::pin(future::ready(Ok(vec![])));
             }
         }
-        let this = self.clone();
         let path = path.clone();
         Box::pin(async move {
-            if let Some(auth) = &this.auth {
+            if let Some(auth) = &self.auth {
                 for step in &path.step_v {
                     if !auth.writer.contains(&step.paper) && !auth.reader.contains(&step.paper) {
                         return Err(io::Error::other("permision denied"));
                     }
                 }
             }
-            dao::get(this.pool.clone(), &path).await
+            dao::get(self.pool.clone(), &path).await
         })
     }
 
-    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let this = self.clone();
+    fn clear<'a, 'f>(
+        &'a self,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+    {
         Box::pin(async move {
-            match &this.auth {
+            match &self.auth {
                 Some(auth) => {
                     for paper in &auth.writer {
-                        let _ = dao::clear_paper(this.pool.clone(), paper).await;
+                        let _ = dao::clear_paper(self.pool.clone(), paper).await;
                     }
                     Ok(())
                 }
-                None => dao::clear(this.pool).await,
+                None => dao::clear(self.pool.clone()).await,
             }
         })
     }
@@ -150,7 +163,10 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use edge_lib::{data::TempDataManager, engine::{EdgeEngine, ScriptTree1}};
+    use edge_lib::{
+        data::TempDataManager,
+        engine::{EdgeEngine, ScriptTree1},
+    };
     use sqlx::sqlite::SqliteConnectOptions;
 
     use super::*;
