@@ -315,3 +315,36 @@ pub fn unescape_word(word: &str) -> String {
         .replace("\'", "\\'");
     format!("'{}'", common_s.replace(" ", "\\s"))
 }
+
+pub fn rs_2_str(rs: &[String]) -> String {
+    let mut acc = String::new();
+    for item in rs {
+        acc = if item.ends_with("\\c") {
+            format!("{acc}{}", &item[0..item.len() - 2])
+        } else {
+            format!("{acc}\n{item}")
+        }
+    }
+    acc
+}
+
+pub fn str_2_rs(s: &str) -> Vec<String> {
+    let mut rs = Vec::new();
+    for line in s.lines() {
+        if line.len() > 500 {
+            let mut start = 0;
+            loop {
+                let end = start + 500;
+                if end >= line.len() {
+                    rs.push(line[start..].to_string());
+                    break;
+                }
+                rs.push(format!("{}\\c", &line[start..end]));
+                start = end;
+            }
+        } else {
+            rs.push(line.to_string());
+        }
+    }
+    rs
+}

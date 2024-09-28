@@ -899,18 +899,7 @@ mod tests {
                 .unwrap();
 
             // rj
-            let rj = json::parse(
-                &rs.into_iter()
-                    .reduce(|acc, item| {
-                        if item.ends_with("\\c") {
-                            format!("{acc}{}", &item[0..item.len() - 2])
-                        } else {
-                            format!("{acc}\n{item}")
-                        }
-                    })
-                    .unwrap(),
-            )
-            .unwrap();
+            let rj = json::parse(&crate::util::rs_2_str(&rs)).unwrap();
 
             // assert
             assert_eq!(rj[0]["step1"][0]["step2"][0], "test");

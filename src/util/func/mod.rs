@@ -546,23 +546,7 @@ where
     }
 
     // rs
-    let mut rs = Vec::new();
-    for line in rj.to_string().lines() {
-        if line.len() > 500 {
-            let mut start = 0;
-            loop {
-                let end = start + 500;
-                if end >= line.len() {
-                    rs.push(line[start..].to_string());
-                    break;
-                }
-                rs.push(format!("{}\\c", &line[start..end]));
-                start = end;
-            }
-        } else {
-            rs.push(line.to_string());
-        }
-    }
+    let rs = crate::util::str_2_rs(&rj.to_string());
 
     // set
     dm.set(output, rs).await
