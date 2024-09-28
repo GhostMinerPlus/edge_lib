@@ -236,6 +236,10 @@ mod main {
 
 pub(crate) mod func;
 
+pub mod data;
+pub mod engine;
+pub mod mem_table;
+
 pub fn escape_word(word: &str) -> String {
     main::escape_word(word)
 }

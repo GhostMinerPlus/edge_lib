@@ -1,17 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, io, sync::Arc};
 
-use crate::data::{AsTempDataManager, PermissionPair};
-use crate::util::Path;
+use crate::util::{
+    data::{AsTempDataManager, PermissionPair},
+    Path,
+};
 
 mod dep {
     use std::io;
 
     use super::{EdgeEngine, Inc, ScriptTree, ScriptTree1};
-    use crate::{
-        data::AsDataManager,
-        util::{func, Path},
-    };
+    use crate::util::{data::AsDataManager, func, Path};
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
@@ -297,7 +296,7 @@ mod dep {
 mod main {
     use std::{io, sync::Arc};
 
-    use crate::data::AsTempDataManager;
+    use crate::util::data::AsTempDataManager;
 
     use super::{EdgeEngine, ScriptTree, ScriptTree1};
 
@@ -319,7 +318,7 @@ mod main {
     mod test_execute1 {
         use std::sync::Arc;
 
-        use crate::{
+        use crate::util::{
             data::{MemDataManager, TempDataManager},
             engine::{main, EdgeEngine, ScriptTree},
         };
@@ -782,9 +781,9 @@ impl EdgeEngine {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{
+    use crate::util::{
         data::{AsDataManager, MemDataManager, TempDataManager},
-        util::Path,
+        Path,
     };
 
     use super::{EdgeEngine, ScriptTree1};

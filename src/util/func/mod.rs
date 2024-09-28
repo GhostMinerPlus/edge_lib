@@ -2,17 +2,17 @@ use std::{cmp::min, collections::HashSet, io};
 
 use rand::random;
 
-use crate::{
+use crate::util::{
     data::{AsDataManager, AsTempDataManager},
-    util::Path,
+    Path,
 };
 
 mod inner {
     use std::{future::Future, io, pin::Pin};
 
-    use crate::{
+    use crate::util::{
         data::{AsDataManager, AsTempDataManager},
-        util::Path,
+        Path,
     };
 
     pub fn dump<'a1, 'a2, 'a3, 'a4, 'f, DM>(

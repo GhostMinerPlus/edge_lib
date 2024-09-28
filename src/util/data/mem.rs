@@ -2,16 +2,16 @@ use std::{future, io, pin::Pin, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{mem_table, util::Path};
+use crate::util::{mem_table, Path};
 
 use super::{AsDataManager, Auth};
 
 mod main {
     #[cfg(test)]
     mod test_get_source_v {
-        use crate::{
+        use crate::util::{
             data::{AsDataManager, MemDataManager},
-            util::Path,
+            Path,
         };
 
         #[test]

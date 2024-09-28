@@ -1,8 +1,8 @@
 use std::{future, io, pin::Pin, sync::Arc};
 
-use crate::{
+use crate::util::{
     data::{Auth, MemDataManager},
-    util::{Path, PathPart},
+    Path, PathPart,
 };
 
 use super::AsDataManager;

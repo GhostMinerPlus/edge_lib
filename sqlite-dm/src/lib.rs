@@ -1,9 +1,9 @@
 use sqlx::{Pool, Sqlite};
 use std::{future, io, pin::Pin, sync::Arc};
 
-use edge_lib::{
+use edge_lib::util::{
     data::{AsDataManager, Auth},
-    util::Path,
+    Path,
 };
 
 mod dao;
@@ -163,7 +163,7 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use edge_lib::{
+    use edge_lib::util::{
         data::TempDataManager,
         engine::{EdgeEngine, ScriptTree1},
     };
