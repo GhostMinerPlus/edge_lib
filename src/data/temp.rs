@@ -116,53 +116,26 @@ impl AsTempDataManager for TempDataManager {
         })
     }
 
-    fn call<'a, 'a1, 'f>(
+    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
-        output: Path,
-        func: &'a1 str,
-        input: Path,
-        input1: Path,
+        output: &'a1 Path,
+        func: &'a2 str,
+        input: &'a3 Path,
+        input1: &'a4 Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+        'a4: 'f,
     {
         Box::pin(async move {
             match func {
-                "new" => func::new(self, output, input, input1).await,
-                "line" => func::line(self, output, input, input1).await,
-                "rand" => func::rand(self, output, input, input1).await,
-                //
-                "append" => func::append(self, output, input, input1).await,
-                "distinct" => func::distinct(self, output, input, input1).await,
-                "left" => func::left(self, output, input, input1).await,
-                "inner" => func::inner(self, output, input, input1).await,
-                "if" => func::if_(self, output, input, input1).await,
-                "if0" => func::if_0(self, output, input, input1).await,
-                "if1" => func::if_1(self, output, input, input1).await,
-                //
-                "+" => func::add(self, output, input, input1).await,
-                "-" => func::minus(self, output, input, input1).await,
-                "*" => func::mul(self, output, input, input1).await,
-                "/" => func::div(self, output, input, input1).await,
-                "%" => func::rest(self, output, input, input1).await,
-                //
-                "==" => func::equal(self, output, input, input1).await,
-                "!=" => func::not_equal(self, output, input, input1).await,
-                ">" => func::greater(self, output, input, input1).await,
-                "<" => func::smaller(self, output, input, input1).await,
-                //
-                "count" => func::count(self, output, input, input1).await,
-                "sum" => func::sum(self, output, input, input1).await,
-                //
-                "=" => func::set(self, output, input, input1).await,
-                //
-                "slice" => func::slice(self, output, input, input1).await,
-                "sort" => func::sort(self, output, input, input1).await,
-                "sort_s" => func::sort_s(self, output, input, input1).await,
                 // while
-                "while0" => self.while0(&input).await,
-                "while1" => self.while1(&input).await,
+                "while0" => self.while0(input).await,
+                "while1" => self.while1(input).await,
+                "dump" => func::dump(self, output, input, input1).await,
                 _ => Err(io::Error::other("Not found!")),
             }
         })
@@ -176,16 +149,19 @@ pub trait AsTempDataManager: Sync + Send + 'static {
 
     fn get_global(&self) -> Arc<dyn AsDataManager>;
 
-    fn call<'a, 'a1, 'f>(
+    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
-        output: Path,
-        func: &'a1 str,
-        input: Path,
-        input1: Path,
+        output: &'a1 Path,
+        func: &'a2 str,
+        input: &'a3 Path,
+        input1: &'a4 Path,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
     where
         'a: 'f,
-        'a1: 'f;
+        'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+        'a4: 'f;
 
     fn divide_dm(&self, auth: Auth) -> Arc<dyn AsDataManager>;
 

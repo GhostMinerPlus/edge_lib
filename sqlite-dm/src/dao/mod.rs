@@ -1,13 +1,13 @@
 use std::io::{self, Error, ErrorKind};
 
 use edge_lib::util::Path;
-use sqlx::{Sqlite, Pool, Row};
+use sqlx::{Pool, Row, Sqlite};
 
 mod main {
     use std::io;
 
     use edge_lib::util::Step;
-    use sqlx::{Sqlite, Pool};
+    use sqlx::{Pool, Sqlite};
 
     pub async fn delete_edge_with_source_code(
         pool: Pool<Sqlite>,

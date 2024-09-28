@@ -8,7 +8,10 @@ mod dep {
     use std::io;
 
     use super::{EdgeEngine, Inc, ScriptTree, ScriptTree1};
-    use crate::{data::AsDataManager, util::Path};
+    use crate::{
+        data::AsDataManager,
+        util::{func, Path},
+    };
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
@@ -26,19 +29,79 @@ mod dep {
         }
         if let Err(_) = engine
             .dm
-            .call(
-                inc.output.clone(),
-                &func_name_v[0],
-                inc.input.clone(),
-                inc.input1.clone(),
-            )
+            .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
             .await
         {
-            let input_item_v = engine.dm.get(&inc.input).await?;
-            let input1_item_v = engine.dm.get(&inc.input1).await?;
-            let inc_v = parse_script1(&func_name_v)?;
-            let rs = invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
-            engine.dm.set(&inc.output, rs).await
+            match func_name_v[0].as_str() {
+                "new" => func::new(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "line" => {
+                    func::line(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "rand" => {
+                    func::rand(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                //
+                "+=" => {
+                    func::append(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "append" => {
+                    func::append(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "distinct" => {
+                    func::distinct(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "left" => {
+                    func::left(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "inner" => {
+                    func::inner(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "if" => func::if_(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "if0" => func::if_0(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "if1" => func::if_1(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                //
+                "+" => func::add(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "-" => func::minus(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "*" => func::mul(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "/" => func::div(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "%" => func::rest(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                //
+                "==" => func::equal(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "!=" => {
+                    func::not_equal(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                ">" => {
+                    func::greater(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "<" => {
+                    func::smaller(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                //
+                "count" => {
+                    func::count(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "sum" => func::sum(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                //
+                "=" => func::set(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                //
+                "slice" => {
+                    func::slice(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "sort" => {
+                    func::sort(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                "sort_s" => {
+                    func::sort_s(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
+                _ => {
+                    let input_item_v = engine.dm.get(&inc.input).await?;
+                    let input1_item_v = engine.dm.get(&inc.input1).await?;
+                    let inc_v = parse_script1(&func_name_v)?;
+                    let rs =
+                        invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
+                    engine.dm.set(&inc.output, rs).await
+                }
+            }
         } else {
             Ok(())
         }
@@ -151,7 +214,7 @@ mod dep {
                     });
                     inc_v.push(Inc {
                         output: Path::from_str(word_v[0].trim()),
-                        function: Path::from_str("append"),
+                        function: Path::from_str("+="),
                         input: Path::from_str(word_v[0].trim()),
                         input1: Path::from_str("$->$:temp"),
                     });
@@ -821,6 +884,47 @@ mod tests {
             });
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             assert!(handle.is_finished());
+        });
+    }
+
+    #[test]
+    fn test_dump() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            // #### dm
+            let dm = Arc::new(MemDataManager::new(None));
+            // ### engine
+            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+            // ## rs
+            let rs = engine
+                .execute_script(&vec![
+                    format!("$->$:step += $->$:step step1"),
+                    format!("$->$:step += $->$:step step2"),
+                    format!("$->$:path = ? _"),
+                    format!("$->$:path->$:step = $->$:step _"),
+                    format!("$->$:root += $->$:root test"),
+                    format!("$->$:output dump $->$:root $->$:path"),
+                ])
+                .await
+                .unwrap();
+            // # rj
+            let rj = json::parse(
+                &rs.into_iter()
+                    .reduce(|acc, item| {
+                        if item.ends_with("\\c") {
+                            format!("{acc}{}", &item[0..item.len() - 2])
+                        } else {
+                            format!("{acc}\n{item}")
+                        }
+                    })
+                    .unwrap(),
+            )
+            .unwrap();
+            // assert
+            assert_eq!(rj[0]["step1"][0]["step2"][0], "test");
         });
     }
 }
