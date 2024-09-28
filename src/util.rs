@@ -234,7 +234,7 @@ mod main {
     }
 }
 
-pub mod func;
+pub(crate) mod func;
 
 pub fn escape_word(word: &str) -> String {
     main::escape_word(word)

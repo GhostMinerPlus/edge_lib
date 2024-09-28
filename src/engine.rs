@@ -93,6 +93,9 @@ mod dep {
                 "sort_s" => {
                     func::sort_s(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
                 }
+                "dump" => {
+                    func::dump(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                }
                 _ => {
                     let input_item_v = engine.dm.get(&inc.input).await?;
                     let input1_item_v = engine.dm.get(&inc.input1).await?;
@@ -243,52 +246,20 @@ mod dep {
             if inc_v.is_empty() {
                 return Ok(vec![]);
             }
-            let (engine, inc) = {
-                let mut inc_v = inc_v;
-                let mut last_inc = inc_v.pop().unwrap();
-                let engine = engine.divide();
-                engine
-                    .dm
-                    .append(&Path::from_str(&format!("$->$:input")), input_item_v)
-                    .await?;
-                engine
-                    .dm
-                    .append(&Path::from_str(&format!("$->$:input1")), input1_item_v)
-                    .await?;
-                log::debug!("inc_v.len(): {}", inc_v.len());
-                for mut inc in inc_v {
-                    unwrap_inc(&mut inc);
-                    invoke_inc(engine.clone(), &inc).await?;
-                }
-                let engine1 = engine.divide();
-                unwrap_inc(&mut last_inc);
-                if engine1.dm.get(&last_inc.output).await?.is_empty() {
-                    engine1
-                        .dm
-                        .set(&last_inc.output, engine.dm.get(&last_inc.output).await?)
-                        .await?;
-                }
-                if engine1.dm.get(&last_inc.function).await?.is_empty() {
-                    engine1
-                        .dm
-                        .set(&last_inc.function, engine.dm.get(&last_inc.function).await?)
-                        .await?;
-                }
-                if engine1.dm.get(&last_inc.input).await?.is_empty() {
-                    engine1
-                        .dm
-                        .set(&last_inc.input, engine.dm.get(&last_inc.input).await?)
-                        .await?;
-                }
-                if engine1.dm.get(&last_inc.input1).await?.is_empty() {
-                    engine1
-                        .dm
-                        .set(&last_inc.input1, engine.dm.get(&last_inc.input1).await?)
-                        .await?;
-                }
-                (engine1, last_inc)
-            };
-            invoke_inc(engine.clone(), &inc).await?;
+            let engine = engine.divide();
+            engine
+                .dm
+                .append(&Path::from_str(&format!("$->$:input")), input_item_v)
+                .await?;
+            engine
+                .dm
+                .append(&Path::from_str(&format!("$->$:input1")), input1_item_v)
+                .await?;
+            log::debug!("inc_v.len(): {}", inc_v.len());
+            for mut inc in inc_v {
+                unwrap_inc(&mut inc);
+                invoke_inc(engine.clone(), &inc).await?;
+            }
             engine
                 .dm
                 .get(&Path::from_str(&format!("$->$:output")))
@@ -894,23 +865,41 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            // #### dm
+            // dm
             let dm = Arc::new(MemDataManager::new(None));
-            // ### engine
+
+            // engine
             let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
-            // ## rs
+
+            // data
+            engine
+                .execute_script(&vec![
+                    format!("test->step1 = ? _"),
+                    format!("test->step1->step2 = test _"),
+                ])
+                .await
+                .unwrap();
+
+            // rs
             let rs = engine
                 .execute_script(&vec![
-                    format!("$->$:step += $->$:step step1"),
+                    // step
+                    format!("$->$:step = step1 _"),
                     format!("$->$:step += $->$:step step2"),
+                    //
+                    // path
                     format!("$->$:path = ? _"),
                     format!("$->$:path->$:step = $->$:step _"),
+                    // root
                     format!("$->$:root += $->$:root test"),
+                    //
+                    // dump
                     format!("$->$:output dump $->$:root $->$:path"),
                 ])
                 .await
                 .unwrap();
-            // # rj
+
+            // rj
             let rj = json::parse(
                 &rs.into_iter()
                     .reduce(|acc, item| {
@@ -923,6 +912,7 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
+
             // assert
             assert_eq!(rj[0]["step1"][0]["step2"][0], "test");
         });

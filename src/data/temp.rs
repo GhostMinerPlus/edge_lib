@@ -7,8 +7,6 @@ use crate::{
 
 use super::AsDataManager;
 
-mod func;
-
 #[derive(Clone)]
 pub struct TempDataManager {
     global: Arc<dyn AsDataManager>,
@@ -116,6 +114,7 @@ impl AsTempDataManager for TempDataManager {
         })
     }
 
+    #[allow(unused)]
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
         output: &'a1 Path,
@@ -135,7 +134,6 @@ impl AsTempDataManager for TempDataManager {
                 // while
                 "while0" => self.while0(input).await,
                 "while1" => self.while1(input).await,
-                "dump" => func::dump(self, output, input, input1).await,
                 _ => Err(io::Error::other("Not found!")),
             }
         })
