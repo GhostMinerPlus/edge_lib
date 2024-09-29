@@ -786,6 +786,10 @@ impl EdgeEngine {
         'a2: 'f,
     {
         Box::pin(async move {
+            if data.is_null() {
+                return Ok(());
+            }
+
             if data.is_array() {
                 for item in data.members() {
                     self.load(item, addr).await?;
