@@ -873,7 +873,29 @@ mod tests {
             // data
             engine
                 .execute_script(&vec![
+                    format!("$->$:field = ? _"),
+                    //
+                    format!("$->$:field->name = step1 _"),
+                    format!("$->$:field->type = test1 _"),
+                    //
+                    format!("$->$:type = ? _"),
+                    //
+                    format!("$->$:type->type = type _"),
+                    format!("$->$:type->name = test _"),
+                    format!("$->$:type->field = $->$:field _"),
+                    //
+                    format!("$->$:field = ? _"),
+                    //
+                    format!("$->$:field->name = step2 _"),
+                    //
+                    format!("$->$:type = ? _"),
+                    //
+                    format!("$->$:type->type = type _"),
+                    format!("$->$:type->name = test1 _"),
+                    format!("$->$:type->field = $->$:field _"),
+                    //
                     format!("test->step1 = ? _"),
+                    //
                     format!("test->step1->step2 = test _"),
                 ])
                 .await
@@ -881,20 +903,7 @@ mod tests {
 
             // rs
             let rs = engine
-                .execute_script(&vec![
-                    // step
-                    format!("$->$:step = step1 _"),
-                    format!("$->$:step += $->$:step step2"),
-                    //
-                    // path
-                    format!("$->$:path = ? _"),
-                    format!("$->$:path->$:step = $->$:step _"),
-                    // root
-                    format!("$->$:root += $->$:root test"),
-                    //
-                    // dump
-                    format!("$->$:output dump $->$:root $->$:path"),
-                ])
+                .execute_script(&vec![format!("$->$:output dump test test")])
                 .await
                 .unwrap();
 

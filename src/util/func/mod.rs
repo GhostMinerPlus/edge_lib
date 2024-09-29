@@ -8,19 +8,28 @@ use crate::util::{
 };
 
 mod inner {
-    use std::{future::Future, io, pin::Pin};
+    use std::{collections::HashSet, future::Future, io, pin::Pin};
 
     use crate::util::{
         data::{AsDataManager, AsTempDataManager},
         Path,
     };
 
+    pub fn inner(input_item_v: Vec<String>, input1_item_v: Vec<String>) -> Vec<String> {
+        let mut set = HashSet::new();
+        set.extend(input1_item_v);
+
+        input_item_v
+            .into_iter()
+            .filter(|item| set.contains(item))
+            .collect()
+    }
+
     pub fn dump<'a1, 'a2, 'a3, 'a4, 'f, DM>(
         dm: &'a1 DM,
         root: &'a2 str,
-        step_v: &'a3 [String],
-        rj: &'a4 mut json::JsonValue,
-    ) -> Pin<Box<impl Future<Output = io::Result<()>> + 'f>>
+        type_name: &'a3 str,
+    ) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + 'f>>
     where
         DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
         'a1: 'f,
@@ -29,25 +38,41 @@ mod inner {
         'a4: 'f,
     {
         Box::pin(async move {
-            if step_v.is_empty() {
-                *rj = json::JsonValue::String(root.to_string());
-                return Ok(());
+            // type
+            let type_v = inner(
+                dm.get(&Path::from_str(&format!("{type_name}<-name")))
+                    .await?,
+                dm.get(&Path::from_str(&format!("type<-type"))).await?,
+            );
+
+            // field
+            let field_v = dm
+                .get(&Path::from_str(&format!("{}->field", &type_v[0])))
+                .await?;
+
+            let mut rj = json::object! {};
+            for filed in &field_v {
+                let field_name_v = dm.get(&Path::from_str(&format!("{filed}->name"))).await?;
+                let field_type_v = dm.get(&Path::from_str(&format!("{filed}->type"))).await?;
+                let mut rj_item_v = json::array![];
+                let sub_root_v = dm
+                    .get(&Path::from_str(&format!("{root}->{}", &field_name_v[0])))
+                    .await?;
+                if field_type_v.is_empty() {
+                    for sub_root in sub_root_v {
+                        rj_item_v.push(json::JsonValue::String(sub_root)).unwrap();
+                    }
+                } else {
+                    for sub_root in &sub_root_v {
+                        rj_item_v
+                            .push(dump(dm, sub_root, &field_type_v[0]).await?)
+                            .unwrap();
+                    }
+                }
+                rj.insert(&field_name_v[0], rj_item_v).unwrap();
             }
 
-            let path = Path::from_str(&format!("{root}->{}", &step_v[0]));
-
-            let new_root_v = dm.get(&path).await?;
-
-            let mut rs = json::array![];
-            for new_root in &new_root_v {
-                let mut new_rj = json::object! {};
-                dump(dm, new_root, &step_v[1..], &mut new_rj).await?;
-                let _ = rs.push(new_rj);
-            }
-
-            let _ = rj.insert(&step_v[0], rs);
-
-            Ok(())
+            Ok(rj)
         })
     }
 }
@@ -108,17 +133,9 @@ where
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
-    let mut set = HashSet::new();
-    set.extend(input1_item_v);
 
-    dm.set(
-        output,
-        input_item_v
-            .into_iter()
-            .filter(|item| set.contains(item))
-            .collect(),
-    )
-    .await
+    dm.set(output, inner::inner(input_item_v, input1_item_v))
+        .await
 }
 
 pub async fn if_<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
@@ -524,25 +541,20 @@ where
 {
     // root
     let root_v = dm.get(input).await?;
-    // path
-    let path_v = dm.get(input1).await?;
-
-    // step_v2
-    let mut step_v2 = vec![];
-    for path in &path_v {
-        let step_v = dm.get(&Path::from_str(&format!("{path}->$:step"))).await?;
-        log::debug!("{:?}", step_v);
-        step_v2.push(step_v);
-    }
+    // type name
+    let type_name_v = dm.get(input1).await?;
 
     // rj
     let mut rj = json::array![];
-    for root in &root_v {
-        let mut rj_item = json::object! {};
-        for step_v in &step_v2 {
-            inner::dump(dm, root, step_v, &mut rj_item).await?;
+    if type_name_v.is_empty() {
+        for root in root_v {
+            rj.push(json::JsonValue::String(root)).unwrap();
         }
-        let _ = rj.push(rj_item);
+    } else {
+        for root in &root_v {
+            rj.push(inner::dump(dm, root, &type_name_v[0]).await?)
+                .unwrap();
+        }
     }
 
     // rs
