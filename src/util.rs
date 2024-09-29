@@ -1,6 +1,6 @@
 use std::{future::Future, io, pin::Pin};
 
-use data::{AsTempDataManager, AsDataManager};
+use data::{AsDataManager, AsTempDataManager};
 
 mod main {
     use crate::util;

@@ -281,15 +281,6 @@ mod dep {
         unwrap_value(&mut inc.input);
         unwrap_value(&mut inc.input1);
     }
-
-    pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
-        let mut value = json::object! {};
-        for next_item in &script_tree.next_v {
-            let sub_script = format!("{}\n{}", next_item.script, next_item.name);
-            let _ = value.insert(&sub_script, tree_2_entry(next_item));
-        }
-        value
-    }
 }
 
 mod main {
@@ -619,15 +610,6 @@ mod main {
         super::dep::inner_execute1(this.clone(), "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
     }
-
-    /// 参数转换
-    pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
-        let script = format!("{}\n{}", script_tree.script, script_tree.name);
-        let value = super::dep::tree_2_entry(script_tree);
-        let mut json = json::object! {};
-        let _ = json.insert(&script, value);
-        json
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -727,35 +709,6 @@ impl EdgeEngine {
         Self {
             dm: AsTempDataManager::divide(self.dm.as_ref(), self.dm.get_auth().clone()),
         }
-    }
-
-    pub fn entry_2_tree(script_str: &str, next_v_json: &json::JsonValue) -> ScriptTree {
-        let mut next_v = Vec::with_capacity(next_v_json.len());
-        for (sub_script_str, sub_next_v_json) in next_v_json.entries() {
-            next_v.push(Self::entry_2_tree(sub_script_str, sub_next_v_json));
-        }
-        let (script, name) = match script_str.rfind('\n') {
-            Some(pos) => (
-                script_str[0..pos].to_string(),
-                script_str[pos + 1..].to_string(),
-            ),
-            None => (script_str.to_string(), script_str.to_string()),
-        };
-        ScriptTree {
-            script,
-            name,
-            next_v,
-        }
-    }
-
-    pub fn tree_2_entry(script_tree: &ScriptTree) -> json::JsonValue {
-        main::tree_2_entry(script_tree)
-    }
-
-    pub async fn execute(&mut self, script_tree: &json::JsonValue) -> io::Result<json::JsonValue> {
-        let (script_str, next_v_json) = script_tree.entries().next().unwrap();
-        let script_tree = Self::entry_2_tree(script_str, next_v_json);
-        self.execute1(&script_tree).await
     }
 
     pub async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
