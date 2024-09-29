@@ -159,6 +159,19 @@ impl AsDataManager for SqliteDataManager {
             }
         })
     }
+
+    fn get_code_v<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        root: &'a1 str,
+        space: &'a2 str,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move { dao::get_code_v(self.pool.clone(), root, space).await })
+    }
 }
 
 #[cfg(test)]

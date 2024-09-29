@@ -28,7 +28,7 @@ mod inner {
     pub fn dump<'a1, 'a2, 'a3, 'a4, 'f, DM>(
         dm: &'a1 DM,
         root: &'a2 str,
-        type_name: &'a3 str,
+        space: &'a3 str,
     ) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + 'f>>
     where
         DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
@@ -38,38 +38,26 @@ mod inner {
         'a4: 'f,
     {
         Box::pin(async move {
-            // type
-            let type_v = inner(
-                dm.get(&Path::from_str(&format!("{type_name}<-name")))
-                    .await?,
-                dm.get(&Path::from_str(&format!("type<-type"))).await?,
-            );
+            let code_v = dm.get_code_v(root, space).await?;
 
-            // field
-            let field_v = dm
-                .get(&Path::from_str(&format!("{}->field", &type_v[0])))
-                .await?;
+            if code_v.is_empty() {
+                return Ok(json::JsonValue::String(root.to_string()));
+            }
 
             let mut rj = json::object! {};
-            for filed in &field_v {
-                let field_name_v = dm.get(&Path::from_str(&format!("{filed}->name"))).await?;
-                let field_type_v = dm.get(&Path::from_str(&format!("{filed}->type"))).await?;
+
+            for code in &code_v {
                 let mut rj_item_v = json::array![];
+
                 let sub_root_v = dm
-                    .get(&Path::from_str(&format!("{root}->{}", &field_name_v[0])))
+                    .get(&Path::from_str(&format!("{root}->{space}:{code}")))
                     .await?;
-                if field_type_v.is_empty() {
-                    for sub_root in sub_root_v {
-                        rj_item_v.push(json::JsonValue::String(sub_root)).unwrap();
-                    }
-                } else {
-                    for sub_root in &sub_root_v {
-                        rj_item_v
-                            .push(dump(dm, sub_root, &field_type_v[0]).await?)
-                            .unwrap();
-                    }
+
+                for sub_root in &sub_root_v {
+                    rj_item_v.push(dump(dm, sub_root, space).await?).unwrap();
                 }
-                rj.insert(&field_name_v[0], rj_item_v).unwrap();
+
+                rj.insert(code, rj_item_v).unwrap();
             }
 
             Ok(rj)
@@ -429,7 +417,7 @@ where
 {
     let input_item_v = dm.get(input).await?;
     if input_item_v.len() != 1 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not, when checking"));
     }
     let sz = input_item_v[0]
         .parse::<i64>()
@@ -542,18 +530,17 @@ where
     // root
     let root_v = dm.get(input).await?;
     // type name
-    let type_name_v = dm.get(input1).await?;
+    let space_v = dm.get(input1).await?;
 
     // rj
     let mut rj = json::array![];
-    if type_name_v.is_empty() {
+    if space_v.is_empty() {
         for root in root_v {
             rj.push(json::JsonValue::String(root)).unwrap();
         }
     } else {
         for root in &root_v {
-            rj.push(inner::dump(dm, root, &type_name_v[0]).await?)
-                .unwrap();
+            rj.push(inner::dump(dm, root, &space_v[0]).await?).unwrap();
         }
     }
 

@@ -100,7 +100,7 @@ mod dep {
                     let input1_item_v = engine.dm.get(&inc.input1).await?;
                     let inc_v = parse_script1(&func_name_v)?;
                     let rs =
-                        invoke_inc_v(engine.clone(), input_item_v, input1_item_v, inc_v).await?;
+                        invoke_inc_v(engine.divide(), input_item_v, input1_item_v, inc_v).await?;
                     engine.dm.set(&inc.output, rs).await
                 }
             }
@@ -127,7 +127,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute(engine.clone(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute(engine.divide(), input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -153,7 +153,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute1(engine.clone(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute1(engine.divide(), input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -245,7 +245,6 @@ mod dep {
             if inc_v.is_empty() {
                 return Ok(vec![]);
             }
-            let engine = engine.divide();
             engine
                 .dm
                 .append(&Path::from_str(&format!("$->$:input")), input_item_v)
@@ -873,30 +872,10 @@ mod tests {
             // data
             engine
                 .execute_script(&vec![
-                    format!("$->$:field = ? _"),
                     //
-                    format!("$->$:field->name = step1 _"),
-                    format!("$->$:field->type = test1 _"),
+                    format!("test->test:step1 = ? _"),
                     //
-                    format!("$->$:type = ? _"),
-                    //
-                    format!("$->$:type->type = type _"),
-                    format!("$->$:type->name = test _"),
-                    format!("$->$:type->field = $->$:field _"),
-                    //
-                    format!("$->$:field = ? _"),
-                    //
-                    format!("$->$:field->name = step2 _"),
-                    //
-                    format!("$->$:type = ? _"),
-                    //
-                    format!("$->$:type->type = type _"),
-                    format!("$->$:type->name = test1 _"),
-                    format!("$->$:type->field = $->$:field _"),
-                    //
-                    format!("test->step1 = ? _"),
-                    //
-                    format!("test->step1->step2 = test _"),
+                    format!("test->test:step1->test:step2 = test1 _"),
                 ])
                 .await
                 .unwrap();
@@ -911,7 +890,7 @@ mod tests {
             let rj = json::parse(&crate::util::rs_2_str(&rs)).unwrap();
 
             // assert
-            assert_eq!(rj[0]["step1"][0]["step2"][0], "test");
+            assert_eq!(rj[0]["step1"][0]["step2"][0], "test1");
         });
     }
 }

@@ -159,3 +159,17 @@ pub async fn clear_paper(pool: Pool<Sqlite>, paper: &str) -> io::Result<()> {
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
     Ok(())
 }
+
+pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> io::Result<Vec<String>> {
+    Ok(
+        sqlx::query("select code from edge_t where source = ? and paper = ?")
+            .bind(root)
+            .bind(paper)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| Error::new(ErrorKind::Other, e))?
+            .iter()
+            .map(|row| row.get(0))
+            .collect(),
+    )
+}

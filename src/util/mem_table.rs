@@ -153,4 +153,21 @@ impl MemTable {
         self.inx_code_target.clear();
         self.inx_paper.clear();
     }
+
+    pub fn get_code_v(&self, root: &str, space: &str) -> Vec<String> {
+        if let Some(id_v) = self.inx_paper.get(space) {
+            return id_v
+                .iter()
+                .filter(|id| {
+                    let edge = &self.edge_mp[id];
+                    edge.source == root
+                })
+                .map(|id| {
+                    let edge = &self.edge_mp[id];
+                    edge.code.clone()
+                })
+                .collect();
+        }
+        Vec::new()
+    }
 }
