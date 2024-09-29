@@ -1,3 +1,7 @@
+use std::{future::Future, io, pin::Pin};
+
+use data::{AsTempDataManager, AsDataManager};
+
 mod main {
     use crate::util;
 
@@ -347,4 +351,45 @@ pub fn str_2_rs(s: &str) -> Vec<String> {
         }
     }
     rs
+}
+
+pub(crate) fn dump<'a1, 'a2, 'a3, 'a4, 'f, DM>(
+    dm: &'a1 DM,
+    root: &'a2 str,
+    space: &'a3 str,
+) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + 'f>>
+where
+    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    'a1: 'f,
+    'a2: 'f,
+    'a3: 'f,
+    'a4: 'f,
+{
+    Box::pin(async move {
+        let code_v = dm.get_code_v(root, space).await?;
+
+        if code_v.is_empty() {
+            return Ok(json::JsonValue::String(root.to_string()));
+        }
+
+        let mut rj = json::object! {};
+
+        for code in &code_v {
+            let mut rj_item_v = json::array![];
+
+            let paper_code = format!("{space}:{code}");
+
+            let sub_root_v = dm
+                .get(&Path::from_str(&format!("{root}->{paper_code}")))
+                .await?;
+
+            for sub_root in &sub_root_v {
+                rj_item_v.push(dump(dm, sub_root, space).await?).unwrap();
+            }
+
+            rj.insert(&paper_code, rj_item_v).unwrap();
+        }
+
+        Ok(rj)
+    })
 }

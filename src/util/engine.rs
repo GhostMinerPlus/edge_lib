@@ -819,6 +819,17 @@ impl EdgeEngine {
             Ok(())
         })
     }
+
+    pub async fn dump(&self, addr: &Path, paper: &str) -> io::Result<json::JsonValue> {
+        // root
+        let root_v = self.dm.get(addr).await?;
+        let mut rj = json::array![];
+        for root in &root_v {
+            rj.push(crate::util::dump(self.dm.as_ref(), root, paper).await?)
+                .unwrap();
+        }
+        Ok(rj)
+    }
 }
 
 #[cfg(test)]

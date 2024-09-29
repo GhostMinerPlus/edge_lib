@@ -8,12 +8,7 @@ use crate::util::{
 };
 
 mod inner {
-    use std::{collections::HashSet, future::Future, io, pin::Pin};
-
-    use crate::util::{
-        data::{AsDataManager, AsTempDataManager},
-        Path,
-    };
+    use std::collections::HashSet;
 
     pub fn inner(input_item_v: Vec<String>, input1_item_v: Vec<String>) -> Vec<String> {
         let mut set = HashSet::new();
@@ -23,47 +18,6 @@ mod inner {
             .into_iter()
             .filter(|item| set.contains(item))
             .collect()
-    }
-
-    pub fn dump<'a1, 'a2, 'a3, 'a4, 'f, DM>(
-        dm: &'a1 DM,
-        root: &'a2 str,
-        space: &'a3 str,
-    ) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + 'f>>
-    where
-        DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-        'a1: 'f,
-        'a2: 'f,
-        'a3: 'f,
-        'a4: 'f,
-    {
-        Box::pin(async move {
-            let code_v = dm.get_code_v(root, space).await?;
-
-            if code_v.is_empty() {
-                return Ok(json::JsonValue::String(root.to_string()));
-            }
-
-            let mut rj = json::object! {};
-
-            for code in &code_v {
-                let mut rj_item_v = json::array![];
-
-                let paper_code = format!("{space}:{code}");
-
-                let sub_root_v = dm
-                    .get(&Path::from_str(&format!("{root}->{paper_code}")))
-                    .await?;
-
-                for sub_root in &sub_root_v {
-                    rj_item_v.push(dump(dm, sub_root, space).await?).unwrap();
-                }
-
-                rj.insert(&paper_code, rj_item_v).unwrap();
-            }
-
-            Ok(rj)
-        })
     }
 }
 
@@ -419,7 +373,10 @@ where
 {
     let input_item_v = dm.get(input).await?;
     if input_item_v.len() != 1 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not, when checking"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "need 1 but not, when checking",
+        ));
     }
     let sz = input_item_v[0]
         .parse::<i64>()
@@ -542,7 +499,8 @@ where
         }
     } else {
         for root in &root_v {
-            rj.push(inner::dump(dm, root, &space_v[0]).await?).unwrap();
+            rj.push(crate::util::dump(dm, root, &space_v[0]).await?)
+                .unwrap();
         }
     }
 
