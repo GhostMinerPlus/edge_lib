@@ -122,7 +122,7 @@ mod main {
         if let Some(root) = &this.root_op {
             let mut s = root.clone();
             for step in &this.step_v {
-                s = format!("{s}{}{}", step.arrow, step.code);
+                s = format!("{s}{}{}:{}", step.arrow, step.paper, step.code);
             }
             s
         } else {

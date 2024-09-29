@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, io, sync::Arc};
+use std::{collections::HashSet, future::Future, io, pin::Pin, sync::Arc};
 
 use crate::util::{
-    data::{AsTempDataManager, PermissionPair},
+    data::{AsDataManager, AsTempDataManager, PermissionPair},
     Path,
 };
 
@@ -774,6 +774,47 @@ impl EdgeEngine {
     pub fn reset(&mut self) {
         self.dm = AsTempDataManager::divide(self.dm.as_ref(), self.dm.get_auth().clone());
     }
+
+    pub fn load<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        data: &'a1 json::JsonValue,
+        addr: &'a2 Path,
+    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            if data.is_array() {
+                for item in data.members() {
+                    self.load(item, addr).await?;
+                }
+                return Ok(());
+            }
+
+            if !data.is_object() {
+                self.dm
+                    .append(addr, vec![data.as_str().unwrap().to_string()])
+                    .await?;
+                return Ok(());
+            }
+
+            self.dm.append(addr, vec![dep::gen_value()]).await?;
+
+            for (k, v) in data.entries() {
+                let sub_path = Path::from_str(&format!("{}->{k}", addr.to_string()));
+                if v.is_array() {
+                    for item in v.members() {
+                        self.load(item, &sub_path).await?;
+                    }
+                } else {
+                    self.load(v, &sub_path).await?;
+                }
+            }
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -890,7 +931,44 @@ mod tests {
             let rj = json::parse(&crate::util::rs_2_str(&rs)).unwrap();
 
             // assert
-            assert_eq!(rj[0]["step1"][0]["step2"][0], "test1");
+            assert_eq!(rj[0]["test:step1"][0]["test:step2"][0], "test1");
         });
+    }
+
+    #[test]
+    fn test_load() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            // dm
+            let dm = Arc::new(MemDataManager::new(None));
+
+            // engine
+            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+
+            engine
+                .load(
+                    &json::object! {
+                        "$:test": "test"
+                    },
+                    &Path::from_str("$->$:test"),
+                )
+                .await
+                .unwrap();
+
+            // rs
+            let rs = engine
+                .execute_script(&vec![format!("$->$:output dump $->$:test $")])
+                .await
+                .unwrap();
+
+            // rj
+            let rj = json::parse(&crate::util::rs_2_str(&rs)).unwrap();
+
+            // assert
+            assert_eq!(rj[0]["$:test"][0], "test");
+        })
     }
 }

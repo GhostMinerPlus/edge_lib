@@ -49,15 +49,17 @@ mod inner {
             for code in &code_v {
                 let mut rj_item_v = json::array![];
 
+                let paper_code = format!("{space}:{code}");
+
                 let sub_root_v = dm
-                    .get(&Path::from_str(&format!("{root}->{space}:{code}")))
+                    .get(&Path::from_str(&format!("{root}->{paper_code}")))
                     .await?;
 
                 for sub_root in &sub_root_v {
                     rj_item_v.push(dump(dm, sub_root, space).await?).unwrap();
                 }
 
-                rj.insert(code, rj_item_v).unwrap();
+                rj.insert(&paper_code, rj_item_v).unwrap();
             }
 
             Ok(rj)
