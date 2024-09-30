@@ -267,9 +267,9 @@ mod dep {
 
     #[inline]
     pub fn unwrap_value(path: &mut Path) {
-        if let Some(path_root) = &mut path.root_op {
-            if path_root == "?" && path.step_v.is_empty() {
-                *path_root = gen_value();
+        if path.root_v.len() == 1 {
+            if path.root_v[0] == "?" && path.step_v.is_empty() {
+                path.root_v[0] = gen_value();
             }
         }
     }
@@ -284,15 +284,9 @@ mod dep {
 }
 
 mod main {
-    use std::{io, sync::Arc};
-
-    use crate::util::data::AsTempDataManager;
+    use std::io;
 
     use super::{EdgeEngine, ScriptTree, ScriptTree1};
-
-    pub fn new_engine(dm: Arc<dyn AsTempDataManager>) -> EdgeEngine {
-        EdgeEngine { dm }
-    }
 
     /// 执行脚本树
     pub async fn execute1(
@@ -648,7 +642,7 @@ impl EdgeEngine {
         let dm = if user == "root" {
             dm
         } else {
-            let mut engine = main::new_engine(dm.clone());
+            let mut engine = EdgeEngine { dm: dm.clone() };
             // TODO: Maybe execute3(script: &str) -> JsonValue
             let rs = engine
                 .execute2(&ScriptTree1 {
@@ -698,7 +692,7 @@ impl EdgeEngine {
                 }),
             )
         };
-        main::new_engine(dm)
+        EdgeEngine { dm: dm.clone() }
     }
 
     pub fn get_dm(&self) -> Arc<dyn AsTempDataManager> {

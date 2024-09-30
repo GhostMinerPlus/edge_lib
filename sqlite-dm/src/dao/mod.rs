@@ -119,18 +119,22 @@ pub async fn insert_edge(
 pub async fn get(pool: Pool<Sqlite>, path: &Path) -> io::Result<Vec<String>> {
     let first_step = &path.step_v[0];
     let sql = main::gen_sql_stm(first_step, &path.step_v[1..]);
-    let mut stm = sqlx::query(&sql).bind(path.root_op.as_ref().unwrap());
-    for step in &path.step_v {
-        stm = stm.bind(&step.paper).bind(&step.code);
-    }
-    let rs = stm
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
     let mut arr = Vec::new();
-    for row in rs {
-        arr.push(row.get(0));
+
+    for root in &path.root_v {
+        let mut stm = sqlx::query(&sql).bind(root);
+        for step in &path.step_v {
+            stm = stm.bind(&step.paper).bind(&step.code);
+        }
+        let rs = stm
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        for row in rs {
+            arr.push(row.get(0));
+        }
     }
+
     Ok(arr)
 }
 

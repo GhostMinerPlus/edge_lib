@@ -122,11 +122,7 @@ impl AsDataManager for SqliteDataManager {
         'a1: 'f,
     {
         if path.step_v.is_empty() {
-            if let Some(root) = &path.root_op {
-                return Box::pin(future::ready(Ok(vec![root.clone()])));
-            } else {
-                return Box::pin(future::ready(Ok(vec![])));
-            }
+            return Box::pin(future::ready(Ok(path.root_v.clone())));
         }
         let path = path.clone();
         Box::pin(async move {

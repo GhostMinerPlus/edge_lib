@@ -20,69 +20,32 @@ mod main {
         false
     }
 
-    pub fn escape_word(mut word: &str) -> String {
-        if word.starts_with('\'') && word.ends_with('\'') {
-            word = &word[1..word.len() - 1];
-        }
-
-        let mut rs = String::new();
-        let mut pos = 0;
-        while pos < word.len() {
-            pos += match word[pos..].find('\\') {
-                Some(offset) => {
-                    let ch = &word[pos + offset + 1..pos + offset + 2];
-                    let ch = match ch {
-                        "n" => "\n",
-                        "t" => "\t",
-                        "s" => " ",
-                        _ => ch,
-                    };
-                    rs = format!("{rs}{}{ch}", &word[pos..pos + offset]);
-                    offset + 2
-                }
-                None => {
-                    rs = format!("{rs}{}", &word[pos..]);
-                    break;
-                }
-            };
-        }
-        rs
-    }
-
-    #[cfg(test)]
-    mod test_escape_word {
-        use super::escape_word;
-
-        #[test]
-        fn test() {
-            let rs = escape_word("\\wo\\nrd");
-            assert_eq!(rs, "wo\nrd");
-        }
-    }
-
     pub fn from_str(path: &str) -> Path {
         if path == "_" {
             return Path {
-                root_op: None,
+                root_v: Vec::new(),
                 step_v: Vec::new(),
             };
         }
         if path.is_empty() {
             return Path {
-                root_op: Some(String::new()),
+                root_v: vec![String::new()],
                 step_v: Vec::new(),
             };
         }
         log::debug!("Path::from_str: {path}");
         if path.starts_with('\'') && path.ends_with('\'') {
             return Path {
-                root_op: Some(util::escape_word(path)),
+                root_v: vec![util::escape_word(path)],
                 step_v: Vec::new(),
             };
         }
 
         let s = find_arrrow(path).unwrap_or(path.len());
-        let root = path[0..s].to_string();
+        let root_v = path[0..s]
+            .split(',')
+            .map(|root| util::escape_word(root))
+            .collect();
         let mut tail = &path[s..];
         let mut step_v = Vec::new();
         while !tail.is_empty() {
@@ -107,24 +70,26 @@ mod main {
             });
             tail = &tail[s..];
         }
-        Path {
-            root_op: Some(root),
-            step_v,
-        }
+        Path { root_v, step_v }
     }
 
     #[cfg(test)]
     mod test_from_str {
         #[test]
         fn should_from_str() {
-            let path = super::from_str("$51aae06c-65e9-468a-83b5-041fd52b37fc->$:proxy->path");
+            let path = super::from_str("51aae06c-65e9-468a-83b5-041fd52b37fc->$:proxy->path");
             assert_eq!(path.step_v.len(), 2);
         }
     }
 
     pub fn to_string(this: &Path) -> String {
-        if let Some(root) = &this.root_op {
-            let mut s = root.clone();
+        if !this.root_v.is_empty() {
+            let mut s = this
+                .root_v
+                .iter()
+                .map(|root| util::unescape_word(root))
+                .reduce(|acc, item| format!("{acc},{item}"))
+                .unwrap();
             for step in &this.step_v {
                 s = format!("{s}{}{}:{}", step.arrow, step.paper, step.code);
             }
@@ -167,7 +132,7 @@ mod main {
                 return PathPart::EntireTemp;
             }
             PathPart::Temp(Path {
-                root_op: this.root_op.clone(),
+                root_v: this.root_v.clone(),
                 step_v: this.step_v[0..end].to_vec(),
             })
         } else {
@@ -182,7 +147,7 @@ mod main {
                 return PathPart::EntirePure;
             }
             PathPart::Pure(Path {
-                root_op: this.root_op.clone(),
+                root_v: this.root_v.clone(),
                 step_v: this.step_v[0..end].to_vec(),
             })
         }
@@ -244,8 +209,44 @@ pub mod data;
 pub mod engine;
 pub mod mem_table;
 
-pub fn escape_word(word: &str) -> String {
-    main::escape_word(word)
+pub fn escape_word(mut word: &str) -> String {
+    if word.starts_with('\'') && word.ends_with('\'') {
+        word = &word[1..word.len() - 1];
+    }
+
+    let mut rs = String::new();
+    let mut pos = 0;
+    while pos < word.len() {
+        pos += match word[pos..].find('\\') {
+            Some(offset) => {
+                let ch = &word[pos + offset + 1..pos + offset + 2];
+                let ch = match ch {
+                    "n" => "\n",
+                    "t" => "\t",
+                    "s" => " ",
+                    _ => ch,
+                };
+                rs = format!("{rs}{}{ch}", &word[pos..pos + offset]);
+                offset + 2
+            }
+            None => {
+                rs = format!("{rs}{}", &word[pos..]);
+                break;
+            }
+        };
+    }
+    rs
+}
+
+#[cfg(test)]
+mod test_escape_word {
+    use super::escape_word;
+
+    #[test]
+    fn test() {
+        let rs = escape_word("\\wo\\nrd");
+        assert_eq!(rs, "wo\nrd");
+    }
 }
 
 pub enum PathType {
@@ -271,7 +272,7 @@ pub struct Step {
 /// root->paper:code, root->paper:code, root->paper:code
 #[derive(Clone, Eq, Hash, PartialEq, Debug)]
 pub struct Path {
-    pub root_op: Option<String>,
+    pub root_v: Vec<String>,
     pub step_v: Vec<Step>,
 }
 

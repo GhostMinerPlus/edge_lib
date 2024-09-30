@@ -35,20 +35,18 @@ impl TempDataManager {
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
             let root_v = this.get(&path).await?;
+            let path = Path {
+                root_v,
+                step_v: vec![step],
+            };
             loop {
-                for root in &root_v {
-                    let path = Path {
-                        root_op: Some(root.clone()),
-                        step_v: vec![step.clone()],
-                    };
-                    if path.is_temp() {
-                        if !this.temp.get(&path).await?.is_empty() {
-                            return Ok(());
-                        }
-                    } else {
-                        if !this.global.get(&path).await?.is_empty() {
-                            return Ok(());
-                        }
+                if path.is_temp() {
+                    if !this.temp.get(&path).await?.is_empty() {
+                        return Ok(());
+                    }
+                } else {
+                    if !this.global.get(&path).await?.is_empty() {
+                        return Ok(());
                     }
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -65,20 +63,18 @@ impl TempDataManager {
         Box::pin(async move {
             let step = path.step_v.pop().unwrap();
             let root_v = this.get(&path).await?;
+            let path = Path {
+                root_v,
+                step_v: vec![step],
+            };
             loop {
-                for root in &root_v {
-                    let path = Path {
-                        root_op: Some(root.clone()),
-                        step_v: vec![step.clone()],
-                    };
-                    if path.is_temp() {
-                        if this.temp.get(&path).await?.is_empty() {
-                            return Ok(());
-                        }
-                    } else {
-                        if this.global.get(&path).await?.is_empty() {
-                            return Ok(());
-                        }
+                if path.is_temp() {
+                    if this.temp.get(&path).await?.is_empty() {
+                        return Ok(());
+                    }
+                } else {
+                    if this.global.get(&path).await?.is_empty() {
+                        return Ok(());
                     }
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -198,31 +194,27 @@ where
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
-                for root in &root_v {
-                    self.get_temp()
-                        .append(
-                            &Path {
-                                root_op: Some(root.clone()),
-                                step_v: vec![step.clone()],
-                            },
-                            item_v.clone(),
-                        )
-                        .await?;
-                }
+                self.get_temp()
+                    .append(
+                        &Path {
+                            root_v,
+                            step_v: vec![step],
+                        },
+                        item_v,
+                    )
+                    .await?;
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
-                for root in &root_v {
-                    self.get_global()
-                        .append(
-                            &Path {
-                                root_op: Some(root.clone()),
-                                step_v: vec![step.clone()],
-                            },
-                            item_v.clone(),
-                        )
-                        .await?;
-                }
+                self.get_global()
+                    .append(
+                        &Path {
+                            root_v,
+                            step_v: vec![step],
+                        },
+                        item_v,
+                    )
+                    .await?;
             }
             Ok(())
         })
@@ -254,17 +246,15 @@ where
                     step.code,
                     root_v.len()
                 );
-                for root in &root_v {
-                    self.get_temp()
-                        .set(
-                            &Path {
-                                root_op: Some(root.clone()),
-                                step_v: vec![step.clone()],
-                            },
-                            item_v.clone(),
-                        )
-                        .await?;
-                }
+                self.get_temp()
+                    .set(
+                        &Path {
+                            root_v,
+                            step_v: vec![step],
+                        },
+                        item_v,
+                    )
+                    .await?;
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
@@ -274,17 +264,15 @@ where
                     step.code,
                     root_v.len()
                 );
-                for root in &root_v {
-                    self.get_global()
-                        .set(
-                            &Path {
-                                root_op: Some(root.clone()),
-                                step_v: vec![step.clone()],
-                            },
-                            item_v.clone(),
-                        )
-                        .await?;
-                }
+                self.get_global()
+                    .set(
+                        &Path {
+                            root_v,
+                            step_v: vec![step],
+                        },
+                        item_v,
+                    )
+                    .await?;
             }
             Ok(())
         })
@@ -299,11 +287,7 @@ where
         'a1: 'f,
     {
         if path.step_v.is_empty() {
-            if let Some(root) = &path.root_op {
-                return Box::pin(future::ready(Ok(vec![root.clone()])));
-            } else {
-                return Box::pin(future::ready(Ok(vec![])));
-            }
+            return Box::pin(future::ready(Ok(path.root_v.clone())));
         }
         let path = path.clone();
         Box::pin(async move {
@@ -311,34 +295,20 @@ where
                 PathPart::Pure(part_path) => {
                     let item_v = self.get_global().get(&part_path).await?;
 
-                    let mut rs = Vec::new();
-                    for root in item_v {
-                        rs.extend(
-                            self.get(&Path {
-                                root_op: Some(root),
-                                step_v: path.step_v[part_path.step_v.len()..].to_vec(),
-                            })
-                            .await?,
-                        );
-                    }
-
-                    Ok(rs)
+                    self.get(&Path {
+                        root_v: item_v,
+                        step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                    })
+                    .await
                 }
                 PathPart::Temp(part_path) => {
                     let item_v = self.get_temp().get(&part_path).await?;
 
-                    let mut rs = Vec::new();
-                    for root in item_v {
-                        rs.extend(
-                            self.get(&Path {
-                                root_op: Some(root),
-                                step_v: path.step_v[part_path.step_v.len()..].to_vec(),
-                            })
-                            .await?,
-                        );
-                    }
-
-                    Ok(rs)
+                    self.get(&Path {
+                        root_v: item_v,
+                        step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                    })
+                    .await
                 }
                 PathPart::EntirePure => {
                     let item_v = self.get_global().get(&path).await?;

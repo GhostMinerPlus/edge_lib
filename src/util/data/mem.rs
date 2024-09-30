@@ -185,16 +185,12 @@ impl AsDataManager for MemDataManager {
         'a1: 'f,
     {
         if path.step_v.is_empty() {
-            if let Some(root) = &path.root_op {
-                return Box::pin(future::ready(Ok(vec![root.clone()])));
-            } else {
-                return Box::pin(future::ready(Ok(vec![])));
-            }
+            return Box::pin(future::ready(Ok(path.root_v.clone())));
         }
         let mut path = path.clone();
         Box::pin(async move {
             let mut mem_table = self.mem_table.lock().await;
-            let mut rs = vec![path.root_op.clone().unwrap()];
+            let mut rs = path.root_v.clone();
             while !path.step_v.is_empty() {
                 let step = path.step_v.remove(0);
                 if let Some(auth) = &self.auth {
