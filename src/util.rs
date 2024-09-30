@@ -1,6 +1,6 @@
 use std::{future::Future, io, pin::Pin};
 
-use data::{AsDataManager, AsTempDataManager};
+use data::AsDataManager;
 
 mod main {
     use crate::util;
@@ -354,17 +354,15 @@ pub fn str_2_rs(s: &str) -> Vec<String> {
     rs
 }
 
-pub(crate) fn dump<'a1, 'a2, 'a3, 'a4, 'f, DM>(
-    dm: &'a1 DM,
+pub(crate) fn dump<'a1, 'a2, 'a3, 'f>(
+    dm: &'a1 dyn AsDataManager,
     root: &'a2 str,
     space: &'a3 str,
-) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + 'f>>
+) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
     'a1: 'f,
     'a2: 'f,
     'a3: 'f,
-    'a4: 'f,
 {
     Box::pin(async move {
         let code_v = dm.get_code_v(root, space).await?;

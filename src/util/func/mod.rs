@@ -1,11 +1,10 @@
-use std::{cmp::min, collections::HashSet, io};
+use std::{cmp::min, collections::HashSet, future::Future, io, pin::Pin};
 
 use rand::random;
 
-use crate::util::{
-    data::{AsDataManager, AsTempDataManager},
-    Path,
-};
+use crate::util::Path;
+
+use super::data::AsDataManager;
 
 mod inner {
     use std::collections::HashSet;
@@ -23,7 +22,7 @@ mod inner {
 
 pub async fn append<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let mut input1_item_v = dm.get(input1).await?;
     if output == input {
@@ -38,7 +37,7 @@ where
 #[allow(unused)]
 pub async fn distinct<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let mut set: HashSet<String> = HashSet::new();
     let input_item_v = dm.get(input).await?;
@@ -54,7 +53,7 @@ where
 
 pub async fn left<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -73,7 +72,7 @@ where
 
 pub async fn inner<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -84,7 +83,7 @@ where
 
 pub async fn if_<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -98,7 +97,7 @@ where
 
 pub async fn if_0<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -112,7 +111,7 @@ where
 
 pub async fn if_1<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -127,7 +126,7 @@ where
 #[allow(unused)]
 pub async fn set<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     dm.set(output, input_item_v).await
@@ -135,7 +134,7 @@ where
 
 pub async fn add<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -158,7 +157,7 @@ where
 
 pub async fn minus<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -181,7 +180,7 @@ where
 
 pub async fn mul<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -204,7 +203,7 @@ where
 
 pub async fn div<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -227,7 +226,7 @@ where
 
 pub async fn rest<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -250,7 +249,7 @@ where
 
 pub async fn equal<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -266,7 +265,7 @@ where
 
 pub async fn not_equal<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -282,7 +281,7 @@ where
 
 pub async fn greater<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -306,7 +305,7 @@ where
 
 pub async fn smaller<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -328,10 +327,12 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn new<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn new(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
     if min(input_item_v.len(), input1_item_v.len()) != 1 {
@@ -348,10 +349,12 @@ where
 }
 
 #[allow(unused)]
-pub async fn line<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn line(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     if input_item_v.len() != 1 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "need 1 but not"));
@@ -367,10 +370,12 @@ where
 }
 
 #[allow(unused)]
-pub async fn rand<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn rand(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     if input_item_v.len() != 1 {
         return Err(io::Error::new(
@@ -390,10 +395,12 @@ where
 }
 
 #[allow(unused)]
-pub async fn count<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn count(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     let mut output_item_v = Vec::new();
     output_item_v.push(input_item_v.len().to_string());
@@ -401,10 +408,12 @@ where
 }
 
 #[allow(unused)]
-pub async fn sum<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn sum(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     let mut output_item_v = Vec::new();
     let mut r = 0.0;
@@ -415,10 +424,12 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn slice<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn slice(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     if input_item_v.is_empty() {
         return Err(io::Error::other("no input\nwhen slice"));
@@ -436,10 +447,12 @@ where
     dm.set(output, input_item_v[start..end].to_vec()).await
 }
 
-pub async fn sort<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn sort(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     let order_v = dm.get(input1).await?;
     if input_item_v.len() != order_v.len() {
@@ -463,10 +476,12 @@ where
         .await
 }
 
-pub async fn sort_s<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
-where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
-{
+pub async fn sort_s(
+    dm: &dyn AsDataManager,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()> {
     let input_item_v = dm.get(input).await?;
     let order_v = dm.get(input1).await?;
     if input_item_v.len() != order_v.len() {
@@ -482,31 +497,41 @@ where
         .await
 }
 
-pub async fn dump<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub fn dump<'a1, 'a2, 'a3, 'a4, 'f>(
+    dm: &'a1 dyn AsDataManager,
+    output: &'a2 Path,
+    input: &'a3 Path,
+    input1: &'a4 Path,
+) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'f>>
 where
-    DM: AsTempDataManager + Sync + Send + 'static + ?Sized,
+    'a1: 'f,
+    'a2: 'f,
+    'a3: 'f,
+    'a4: 'f,
 {
-    // root
-    let root_v = dm.get(input).await?;
-    // type name
-    let space_v = dm.get(input1).await?;
+    Box::pin(async move {
+        // root
+        let root_v = dm.get(input).await?;
+        // type name
+        let space_v = dm.get(input1).await?;
 
-    // rj
-    let mut rj = json::array![];
-    if space_v.is_empty() {
-        for root in root_v {
-            rj.push(json::JsonValue::String(root)).unwrap();
+        // rj
+        let mut rj = json::array![];
+        if space_v.is_empty() {
+            for root in root_v {
+                rj.push(json::JsonValue::String(root)).unwrap();
+            }
+        } else {
+            for root in &root_v {
+                rj.push(crate::util::dump(dm, root, &space_v[0]).await?)
+                    .unwrap();
+            }
         }
-    } else {
-        for root in &root_v {
-            rj.push(crate::util::dump(dm, root, &space_v[0]).await?)
-                .unwrap();
-        }
-    }
 
-    // rs
-    let rs = crate::util::str_2_rs(&rj.to_string());
+        // rs
+        let rs = crate::util::str_2_rs(&rj.to_string());
 
-    // set
-    dm.set(output, rs).await
+        // set
+        dm.set(output, rs).await
+    })
 }

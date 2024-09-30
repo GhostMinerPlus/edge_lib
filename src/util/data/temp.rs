@@ -9,8 +9,8 @@ use super::AsDataManager;
 
 #[derive(Clone)]
 pub struct TempDataManager {
-    global: Arc<dyn AsDataManager>,
-    temp: Arc<MemDataManager>,
+    pub global: Arc<dyn AsDataManager>,
+    pub temp: Arc<MemDataManager>,
 }
 
 impl TempDataManager {
@@ -83,95 +83,16 @@ impl TempDataManager {
     }
 }
 
-impl AsTempDataManager for TempDataManager {
-    fn divide_dm(&self, auth: Auth) -> Arc<dyn AsDataManager> {
-        Arc::new(Self {
-            global: self.global.divide(auth.clone()),
-            temp: Arc::new(MemDataManager::new(auth)),
-        })
-    }
-
-    fn get_temp(&self) -> Arc<dyn AsDataManager> {
-        self.temp.clone()
-    }
-
-    fn get_global(&self) -> Arc<dyn AsDataManager> {
-        self.global.clone()
-    }
-
+impl AsDataManager for TempDataManager {
     fn get_auth(&self) -> &Auth {
         self.global.get_auth()
     }
 
-    fn divide(&self, auth: Auth) -> Arc<dyn AsTempDataManager> {
-        Arc::new(Self {
-            temp: Arc::new(MemDataManager::new(auth.clone())),
-            global: self.global.divide(auth),
-        })
-    }
-
-    #[allow(unused)]
-    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
-        &'a self,
-        output: &'a1 Path,
-        func: &'a2 str,
-        input: &'a3 Path,
-        input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-        'a3: 'f,
-        'a4: 'f,
-    {
-        Box::pin(async move {
-            match func {
-                // while
-                "while0" => self.while0(input).await,
-                "while1" => self.while1(input).await,
-                _ => Err(io::Error::other("Not found!")),
-            }
-        })
-    }
-}
-
-pub trait AsTempDataManager: Sync + Send + 'static {
-    fn get_auth(&self) -> &Auth;
-
-    fn get_temp(&self) -> Arc<dyn AsDataManager>;
-
-    fn get_global(&self) -> Arc<dyn AsDataManager>;
-
-    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
-        &'a self,
-        output: &'a1 Path,
-        func: &'a2 str,
-        input: &'a3 Path,
-        input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-        'a3: 'f,
-        'a4: 'f;
-
-    fn divide_dm(&self, auth: Auth) -> Arc<dyn AsDataManager>;
-
-    fn divide(&self, auth: Auth) -> Arc<dyn AsTempDataManager>;
-}
-
-impl<T> AsDataManager for T
-where
-    T: AsTempDataManager + Sync + Send + ?Sized + 'static,
-{
-    fn get_auth(&self) -> &Auth {
-        AsTempDataManager::get_auth(self)
-    }
-
     fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
-        AsTempDataManager::divide_dm(self, auth)
+        Arc::new(Self {
+            global: self.global.divide(auth.clone()),
+            temp: Arc::new(MemDataManager::new(auth)),
+        })
     }
 
     fn append<'a, 'a1, 'f>(
@@ -194,7 +115,7 @@ where
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
-                self.get_temp()
+                self.temp
                     .append(
                         &Path {
                             root_v,
@@ -206,7 +127,7 @@ where
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
-                self.get_global()
+                self.global
                     .append(
                         &Path {
                             root_v,
@@ -246,7 +167,7 @@ where
                     step.code,
                     root_v.len()
                 );
-                self.get_temp()
+                self.temp
                     .set(
                         &Path {
                             root_v,
@@ -264,7 +185,7 @@ where
                     step.code,
                     root_v.len()
                 );
-                self.get_global()
+                self.global
                     .set(
                         &Path {
                             root_v,
@@ -293,7 +214,7 @@ where
         Box::pin(async move {
             match path.first_part() {
                 PathPart::Pure(part_path) => {
-                    let item_v = self.get_global().get(&part_path).await?;
+                    let item_v = self.global.get(&part_path).await?;
 
                     self.get(&Path {
                         root_v: item_v,
@@ -302,7 +223,7 @@ where
                     .await
                 }
                 PathPart::Temp(part_path) => {
-                    let item_v = self.get_temp().get(&part_path).await?;
+                    let item_v = self.temp.get(&part_path).await?;
 
                     self.get(&Path {
                         root_v: item_v,
@@ -311,11 +232,11 @@ where
                     .await
                 }
                 PathPart::EntirePure => {
-                    let item_v = self.get_global().get(&path).await?;
+                    let item_v = self.global.get(&path).await?;
                     Ok(item_v)
                 }
                 PathPart::EntireTemp => {
-                    let item_v = self.get_temp().get(&path).await?;
+                    let item_v = self.temp.get(&path).await?;
                     Ok(item_v)
                 }
             }
@@ -329,8 +250,8 @@ where
         'a: 'f,
     {
         Box::pin(async move {
-            self.get_temp().clear().await?;
-            self.get_global().clear().await
+            self.temp.clear().await?;
+            self.global.clear().await
         })
     }
 
@@ -346,9 +267,34 @@ where
     {
         Box::pin(async move {
             if space == "$" {
-                self.get_temp().get_code_v(root, space).await
+                self.temp.get_code_v(root, space).await
             } else {
-                self.get_global().get_code_v(root, space).await
+                self.global.get_code_v(root, space).await
+            }
+        })
+    }
+
+    #[allow(unused)]
+    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
+        &'a self,
+        output: &'a1 Path,
+        func: &'a2 str,
+        input: &'a3 Path,
+        input1: &'a4 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+        'a4: 'f,
+    {
+        Box::pin(async move {
+            match func {
+                // while
+                "while0" => self.while0(input).await,
+                "while1" => self.while1(input).await,
+                _ => Err(io::Error::other("Not found!")),
             }
         })
     }

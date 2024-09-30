@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, future::Future, io, pin::Pin, sync::Arc};
 
 use crate::util::{
-    data::{AsDataManager, AsTempDataManager, PermissionPair},
+    data::{AsDataManager, PermissionPair},
     Path,
 };
+
+use super::data::{MemDataManager, TempDataManager};
 
 mod dep {
     use std::io;
@@ -32,69 +34,41 @@ mod dep {
             .await
         {
             match func_name_v[0].as_str() {
-                "new" => func::new(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "line" => {
-                    func::line(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "rand" => {
-                    func::rand(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
+                "new" => func::new(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "line" => func::line(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "rand" => func::rand(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 //
-                "+=" => {
-                    func::append(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "append" => {
-                    func::append(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
+                "+=" => func::append(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "append" => func::append(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 "distinct" => {
-                    func::distinct(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
+                    func::distinct(&engine.dm, &inc.output, &inc.input, &inc.input1).await
                 }
-                "left" => {
-                    func::left(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "inner" => {
-                    func::inner(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "if" => func::if_(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "if0" => func::if_0(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "if1" => func::if_1(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "left" => func::left(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "inner" => func::inner(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "if" => func::if_(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "if0" => func::if_0(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "if1" => func::if_1(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 //
-                "+" => func::add(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "-" => func::minus(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "*" => func::mul(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "/" => func::div(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "%" => func::rest(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "+" => func::add(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "-" => func::minus(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "*" => func::mul(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "/" => func::div(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "%" => func::rest(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 //
-                "==" => func::equal(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
-                "!=" => {
-                    func::not_equal(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                ">" => {
-                    func::greater(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "<" => {
-                    func::smaller(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
+                "==" => func::equal(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "!=" => func::not_equal(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                ">" => func::greater(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "<" => func::smaller(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 //
-                "count" => {
-                    func::count(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "sum" => func::sum(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "count" => func::count(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "sum" => func::sum(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 //
-                "=" => func::set(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await,
+                "=" => func::set(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 //
-                "slice" => {
-                    func::slice(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "sort" => {
-                    func::sort(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "sort_s" => {
-                    func::sort_s(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
-                "dump" => {
-                    func::dump(engine.dm.as_ref(), &inc.output, &inc.input, &inc.input1).await
-                }
+                "slice" => func::slice(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "sort" => func::sort(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "sort_s" => func::sort_s(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
+                "dump" => func::dump(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
                 _ => {
                     let input_item_v = engine.dm.get(&inc.input).await?;
                     let input1_item_v = engine.dm.get(&inc.input1).await?;
@@ -303,7 +277,7 @@ mod main {
         use std::sync::Arc;
 
         use crate::util::{
-            data::{MemDataManager, TempDataManager},
+            data::MemDataManager,
             engine::{main, EdgeEngine, ScriptTree},
         };
 
@@ -311,7 +285,7 @@ mod main {
         fn test() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -349,7 +323,7 @@ mod main {
             //     .init();
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -382,7 +356,7 @@ mod main {
         fn test_if() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -411,7 +385,7 @@ mod main {
         fn test_space() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 let rs = main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -436,7 +410,7 @@ mod main {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
 
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -474,7 +448,7 @@ mod main {
         fn test_set() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -540,7 +514,7 @@ mod main {
         fn test_set_proxy() {
             let task = async {
                 let dm = Arc::new(MemDataManager::new(None));
-                let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+                let mut engine = EdgeEngine::new(dm, "root").await;
                 main::execute1(
                     &mut engine,
                     &ScriptTree {
@@ -630,7 +604,7 @@ pub struct ScriptTree1 {
 
 #[derive(Clone)]
 pub struct EdgeEngine {
-    dm: Arc<dyn AsTempDataManager>,
+    dm: TempDataManager,
 }
 
 impl EdgeEngine {
@@ -638,11 +612,13 @@ impl EdgeEngine {
     /// # Parameters
     /// - dm: data manager in root
     /// - writer: writer
-    pub async fn new(dm: Arc<dyn AsTempDataManager>, user: &str) -> Self {
-        let dm = if user == "root" {
-            dm
+    pub async fn new(dm: Arc<dyn AsDataManager>, user: &str) -> Self {
+        let temp_dm = if user == "root" {
+            TempDataManager::new(dm)
         } else {
-            let mut engine = EdgeEngine { dm: dm.clone() };
+            let mut engine = EdgeEngine {
+                dm: TempDataManager::new(dm.clone()),
+            };
             // TODO: Maybe execute3(script: &str) -> JsonValue
             let rs = engine
                 .execute2(&ScriptTree1 {
@@ -684,24 +660,23 @@ impl EdgeEngine {
                 .into_iter()
                 .map(|item| item.as_str().unwrap().to_string())
                 .collect::<HashSet<String>>();
-            AsTempDataManager::divide(
-                dm.as_ref(),
-                Some(PermissionPair {
-                    writer: writer_set,
-                    reader: reader_set,
-                }),
-            )
+            TempDataManager::new(dm.divide(Some(PermissionPair {
+                writer: writer_set,
+                reader: reader_set,
+            })))
         };
-        EdgeEngine { dm: dm.clone() }
+        EdgeEngine {
+            dm: temp_dm.clone(),
+        }
     }
 
-    pub fn get_dm(&self) -> Arc<dyn AsTempDataManager> {
-        self.dm.clone()
+    pub fn get_dm(&self) -> &TempDataManager {
+        &self.dm
     }
 
     pub fn divide(&self) -> Self {
         Self {
-            dm: AsTempDataManager::divide(self.dm.as_ref(), self.dm.get_auth().clone()),
+            dm: TempDataManager::new(self.dm.global.clone()),
         }
     }
 
@@ -719,7 +694,7 @@ impl EdgeEngine {
     }
 
     pub fn reset(&mut self) {
-        self.dm = AsTempDataManager::divide(self.dm.as_ref(), self.dm.get_auth().clone());
+        self.dm.temp = Arc::new(MemDataManager::new(None));
     }
 
     pub fn load<'a, 'a1, 'a2, 'f>(
@@ -772,7 +747,7 @@ impl EdgeEngine {
         let root_v = self.dm.get(addr).await?;
         let mut rj = json::array![];
         for root in &root_v {
-            rj.push(crate::util::dump(self.dm.as_ref(), root, paper).await?)
+            rj.push(crate::util::dump(&self.dm, root, paper).await?)
                 .unwrap();
         }
         Ok(rj)
@@ -784,7 +759,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::util::{
-        data::{AsDataManager, MemDataManager, TempDataManager},
+        data::{AsDataManager, MemDataManager},
         Path,
     };
 
@@ -798,7 +773,7 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             let dm = Arc::new(MemDataManager::new(None));
-            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+            let mut engine = EdgeEngine::new(dm, "root").await;
             engine
                 .execute2(&ScriptTree1 {
                     script: vec![
@@ -828,7 +803,7 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             let dm = Arc::new(MemDataManager::new(None));
-            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+            let mut engine = EdgeEngine::new(dm, "root").await;
 
             let mut engine1 = engine.clone();
             rt.spawn(async move {
@@ -870,7 +845,7 @@ mod tests {
             let dm = Arc::new(MemDataManager::new(None));
 
             // engine
-            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+            let mut engine = EdgeEngine::new(dm, "root").await;
 
             // data
             engine
@@ -908,7 +883,7 @@ mod tests {
             let dm = Arc::new(MemDataManager::new(None));
 
             // engine
-            let mut engine = EdgeEngine::new(Arc::new(TempDataManager::new(dm)), "root").await;
+            let mut engine = EdgeEngine::new(dm, "root").await;
 
             engine
                 .load(
