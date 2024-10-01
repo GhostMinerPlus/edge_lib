@@ -114,16 +114,6 @@ impl TempDataManager {
             }
         }
     }
-
-    pub fn push(&mut self) -> Arc<MemDataManager> {
-        let o_dm = self.temp.clone();
-        self.temp = Arc::new(MemDataManager::new(None));
-        o_dm
-    }
-
-    pub fn pop(&mut self, dm: Arc<MemDataManager>) {
-        self.temp = dm;
-    }
 }
 
 impl AsDataManager for TempDataManager {

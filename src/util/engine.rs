@@ -12,7 +12,7 @@ mod dep {
     use std::io;
 
     use super::{AsEdgeEngine, Inc, ScriptTree, ScriptTree1};
-    use crate::util::Path;
+    use crate::util::{data::AsDataManager, Path};
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
@@ -25,6 +25,10 @@ mod dep {
         script_tree: &ScriptTree,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
+        engine
+            .get_dm()
+            .set(&Path::from_str("$->$:input"), vec![input.to_string()])
+            .await?;
         let rs = engine
             .execute_script(
                 &script_tree
@@ -32,8 +36,6 @@ mod dep {
                     .split('\n')
                     .map(|line| line.to_string())
                     .collect::<Vec<String>>(),
-                vec![input.to_string()],
-                vec![],
             )
             .await?;
         if script_tree.next_v.is_empty() {
@@ -60,9 +62,11 @@ mod dep {
         script_tree: &ScriptTree1,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
-        let rs = engine
-            .execute_script(&script_tree.script, vec![input.to_string()], vec![])
+        engine
+            .get_dm()
+            .set(&Path::from_str("$->input"), vec![input.to_string()])
             .await?;
+        let rs = engine.execute_script(&script_tree.script).await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -510,11 +514,27 @@ pub trait AsEdgeEngine: Sync + Send {
         self.get_dm().call(output, func, input, input1)
     }
 
+    fn execute_script_with_temp<'a, 'a1, 'f>(
+        &'a mut self,
+        script: &'a1 [String],
+        temp: Arc<MemDataManager>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            let o_dm = self.get_dm().temp.clone();
+            self.get_dm_mut().temp = temp;
+            let rs = self.execute_script(script).await;
+            self.get_dm_mut().temp = o_dm;
+            rs
+        })
+    }
+
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 [String],
-        input: Vec<String>,
-        input1: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
@@ -526,12 +546,6 @@ pub trait AsEdgeEngine: Sync + Send {
                 return Ok(vec![]);
             }
             log::debug!("inc_v.len(): {}", inc_v.len());
-            self.get_dm()
-                .set(&Path::from_str("$->$:input"), input)
-                .await?;
-            self.get_dm()
-                .set(&Path::from_str("$->$:input1"), input1)
-                .await?;
             for inc in &mut inc_v {
                 dep::unwrap_inc(inc);
                 log::debug!("invoke_inc: {:?}", inc);
@@ -548,11 +562,11 @@ pub trait AsEdgeEngine: Sync + Send {
                 {
                     let input_item_v = self.get_dm().get(&inc.input).await?;
                     let input1_item_v = self.get_dm().get(&inc.input1).await?;
-                    let o_dm = self.get_dm_mut().push();
-                    let rs = self
-                        .execute_script(&func_name_v, input_item_v, input1_item_v)
+                    let mem = Arc::new(MemDataManager::new(None));
+                    mem.set(&Path::from_str("$->$:input"), input_item_v).await?;
+                    mem.set(&Path::from_str("$->$:input1"), input1_item_v)
                         .await?;
-                    self.get_dm_mut().pop(o_dm);
+                    let rs = self.execute_script_with_temp(script, mem).await?;
                     self.get_dm().set(&inc.output, rs).await?;
                 }
             }
@@ -581,6 +595,26 @@ pub trait AsEdgeEngine: Sync + Send {
                     .unwrap();
             }
             Ok(rj)
+        })
+    }
+
+    fn load_with_temp<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        data: &'a1 json::JsonValue,
+        addr: &'a2 Path,
+        temp: Arc<MemDataManager>,
+    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            let o_dm = self.get_dm().temp.clone();
+            self.get_dm_mut().temp = temp;
+            let rs = self.load(data, addr).await;
+            self.get_dm_mut().temp = o_dm;
+            rs
         })
     }
 
@@ -839,22 +873,18 @@ mod tests {
 
             // data
             engine
-                .execute_script(
-                    &vec![
-                        //
-                        format!("test->test:step1 = ? _"),
-                        //
-                        format!("test->test:step1->test:step2 = test1 _"),
-                    ],
-                    vec![],
-                    vec![],
-                )
+                .execute_script(&vec![
+                    //
+                    format!("test->test:step1 = ? _"),
+                    //
+                    format!("test->test:step1->test:step2 = test1 _"),
+                ])
                 .await
                 .unwrap();
 
             // rs
             let rs = engine
-                .execute_script(&vec![format!("$->$:output dump test test")], vec![], vec![])
+                .execute_script(&vec![format!("$->$:output dump test test")])
                 .await
                 .unwrap();
 
@@ -891,11 +921,7 @@ mod tests {
 
             // rs
             let rs = engine
-                .execute_script(
-                    &vec![format!("$->$:output dump $->$:test $")],
-                    vec![],
-                    vec![],
-                )
+                .execute_script(&vec![format!("$->$:output dump $->$:test $")])
                 .await
                 .unwrap();
 
