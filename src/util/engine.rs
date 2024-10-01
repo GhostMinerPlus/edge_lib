@@ -6,92 +6,39 @@ use crate::util::{
     Path,
 };
 
-use super::data::{MemDataManager, TempDataManager};
+use super::{
+    data::{MemDataManager, TempDataManager},
+    func,
+};
 
 mod dep {
     use std::io;
 
-    use super::{EdgeEngine, Inc, ScriptTree, ScriptTree1};
-    use crate::util::{data::AsDataManager, func, Path};
+    use super::{AsEdgeEngine, Inc, ScriptTree, ScriptTree1};
+    use crate::util::Path;
 
     pub fn gen_value() -> String {
         uuid::Uuid::new_v4().to_string()
     }
 
     #[async_recursion::async_recursion]
-    pub async fn invoke_inc(engine: EdgeEngine, inc: &Inc) -> io::Result<()> {
-        log::debug!("invoke_inc: {:?}", inc);
-        let func_name_v = engine.dm.get(&inc.function).await?;
-        if func_name_v.is_empty() {
-            return Err(io::Error::other(format!(
-                "no funtion: {}\nat invoke_inc",
-                inc.function.to_string()
-            )));
-        }
-        if let Err(_) = engine
-            .dm
-            .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
-            .await
-        {
-            match func_name_v[0].as_str() {
-                "new" => func::new(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "line" => func::line(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "rand" => func::rand(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                //
-                "+=" => func::append(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "append" => func::append(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "distinct" => {
-                    func::distinct(&engine.dm, &inc.output, &inc.input, &inc.input1).await
-                }
-                "left" => func::left(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "inner" => func::inner(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "if" => func::if_(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "if0" => func::if_0(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "if1" => func::if_1(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                //
-                "+" => func::add(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "-" => func::minus(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "*" => func::mul(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "/" => func::div(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "%" => func::rest(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                //
-                "==" => func::equal(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "!=" => func::not_equal(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                ">" => func::greater(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "<" => func::smaller(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                //
-                "count" => func::count(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "sum" => func::sum(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                //
-                "=" => func::set(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                //
-                "slice" => func::slice(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "sort" => func::sort(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "sort_s" => func::sort_s(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                "dump" => func::dump(&engine.dm, &inc.output, &inc.input, &inc.input1).await,
-                _ => {
-                    let input_item_v = engine.dm.get(&inc.input).await?;
-                    let input1_item_v = engine.dm.get(&inc.input1).await?;
-                    let inc_v = parse_script1(&func_name_v)?;
-                    let rs =
-                        invoke_inc_v(engine.divide(), input_item_v, input1_item_v, inc_v).await?;
-                    engine.dm.set(&inc.output, rs).await
-                }
-            }
-        } else {
-            Ok(())
-        }
-    }
-
-    #[async_recursion::async_recursion]
     pub async fn inner_execute(
-        engine: EdgeEngine,
+        engine: &mut dyn AsEdgeEngine,
         input: &str,
         script_tree: &ScriptTree,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
-        let inc_v = parse_script(&script_tree.script)?;
-        let rs = invoke_inc_v(engine.clone(), vec![input.to_string()], vec![], inc_v).await?;
+        let rs = engine
+            .execute_script(
+                &script_tree
+                    .script
+                    .split('\n')
+                    .map(|line| line.to_string())
+                    .collect::<Vec<String>>(),
+                vec![input.to_string()],
+                vec![],
+            )
+            .await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -101,7 +48,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute(engine.divide(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute(engine, input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -111,13 +58,14 @@ mod dep {
 
     #[async_recursion::async_recursion]
     pub async fn inner_execute1(
-        engine: EdgeEngine,
+        engine: &mut dyn AsEdgeEngine,
         input: &str,
         script_tree: &ScriptTree1,
         out_tree: &mut json::JsonValue,
     ) -> io::Result<()> {
-        let inc_v = parse_script1(&script_tree.script)?;
-        let rs = invoke_inc_v(engine.clone(), vec![input.to_string()], vec![], inc_v).await?;
+        let rs = engine
+            .execute_script(&script_tree.script, vec![input.to_string()], vec![])
+            .await?;
         if script_tree.next_v.is_empty() {
             let _ = out_tree.insert(&script_tree.name, rs);
             return Ok(());
@@ -127,7 +75,7 @@ mod dep {
             // fork
             for input in &rs {
                 let mut sub_out_tree = json::object! {};
-                inner_execute1(engine.divide(), input, next_tree, &mut sub_out_tree).await?;
+                inner_execute1(engine, input, next_tree, &mut sub_out_tree).await?;
                 merge(&mut cur, &mut sub_out_tree);
             }
         }
@@ -149,15 +97,6 @@ mod dep {
                 merge(&mut p_tree[k], v);
             }
         }
-    }
-
-    pub fn parse_script(script: &str) -> io::Result<Vec<Inc>> {
-        parse_script1(
-            &script
-                .lines()
-                .map(|line| line.to_string())
-                .collect::<Vec<String>>(),
-        )
     }
 
     pub fn parse_script1(script: &[String]) -> io::Result<Vec<Inc>> {
@@ -209,36 +148,6 @@ mod dep {
         Ok(inc_v)
     }
 
-    pub fn invoke_inc_v(
-        engine: EdgeEngine,
-        input_item_v: Vec<String>,
-        input1_item_v: Vec<String>,
-        inc_v: Vec<Inc>,
-    ) -> impl std::future::Future<Output = io::Result<Vec<String>>> + Send {
-        async move {
-            if inc_v.is_empty() {
-                return Ok(vec![]);
-            }
-            engine
-                .dm
-                .append(&Path::from_str(&format!("$->$:input")), input_item_v)
-                .await?;
-            engine
-                .dm
-                .append(&Path::from_str(&format!("$->$:input1")), input1_item_v)
-                .await?;
-            log::debug!("inc_v.len(): {}", inc_v.len());
-            for mut inc in inc_v {
-                unwrap_inc(&mut inc);
-                invoke_inc(engine.clone(), &inc).await?;
-            }
-            engine
-                .dm
-                .get(&Path::from_str(&format!("$->$:output")))
-                .await
-        }
-    }
-
     #[inline]
     pub fn unwrap_value(path: &mut Path) {
         if path.root_v.len() == 1 {
@@ -268,7 +177,7 @@ mod main {
         script_tree: &ScriptTree,
     ) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        super::dep::inner_execute(this.clone(), "", &script_tree, &mut out_tree).await?;
+        super::dep::inner_execute(this, "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
     }
 
@@ -575,8 +484,79 @@ mod main {
         script_tree: &ScriptTree1,
     ) -> io::Result<json::JsonValue> {
         let mut out_tree = json::object! {};
-        super::dep::inner_execute1(this.clone(), "", &script_tree, &mut out_tree).await?;
+        super::dep::inner_execute1(this, "", &script_tree, &mut out_tree).await?;
         Ok(out_tree)
+    }
+}
+
+pub trait AsEdgeEngine: Sync + Send {
+    fn get_dm(&self) -> &TempDataManager;
+
+    fn divide(&self) -> Box<dyn AsEdgeEngine>;
+
+    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
+        &'a self,
+        output: &'a1 Path,
+        func: &'a2 str,
+        input: &'a3 Path,
+        input1: &'a4 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+        'a4: 'f;
+
+    fn execute_script<'a, 'a1, 'f>(
+        &'a mut self,
+        script: &'a1 [String],
+        input: Vec<String>,
+        input1: Vec<String>,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            let mut inc_v = dep::parse_script1(&script)?;
+            if inc_v.is_empty() {
+                return Ok(vec![]);
+            }
+            log::debug!("inc_v.len(): {}", inc_v.len());
+            self.get_dm()
+                .set(&Path::from_str("$->$:input"), input)
+                .await?;
+            self.get_dm()
+                .set(&Path::from_str("$->$:input1"), input1)
+                .await?;
+            for inc in &mut inc_v {
+                dep::unwrap_inc(inc);
+                log::debug!("invoke_inc: {:?}", inc);
+                let func_name_v = self.get_dm().get(&inc.function).await?;
+                if func_name_v.is_empty() {
+                    return Err(io::Error::other(format!(
+                        "no funtion: {}\nat invoke_inc",
+                        inc.function.to_string()
+                    )));
+                }
+                if let Err(_) = self
+                    .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
+                    .await
+                {
+                    let input_item_v = self.get_dm().get(&inc.input).await?;
+                    let input1_item_v = self.get_dm().get(&inc.input1).await?;
+                    let mut new_engine = self.divide();
+                    let rs = new_engine
+                        .execute_script(&func_name_v, input_item_v, input1_item_v)
+                        .await?;
+                    self.get_dm().set(&inc.output, rs).await?;
+                }
+            }
+            self.get_dm()
+                .get(&Path::from_str(&format!("$->$:output")))
+                .await
+        })
     }
 }
 
@@ -670,27 +650,12 @@ impl EdgeEngine {
         }
     }
 
-    pub fn get_dm(&self) -> &TempDataManager {
-        &self.dm
-    }
-
-    pub fn divide(&self) -> Self {
-        Self {
-            dm: TempDataManager::new(self.dm.global.clone()),
-        }
-    }
-
     pub async fn execute1(&mut self, script_tree: &ScriptTree) -> io::Result<json::JsonValue> {
         main::execute1(self, script_tree).await
     }
 
     pub async fn execute2(&mut self, script_tree: &ScriptTree1) -> io::Result<json::JsonValue> {
         main::execute2(self, script_tree).await
-    }
-
-    pub async fn execute_script(&mut self, script: &Vec<String>) -> io::Result<Vec<String>> {
-        let inc_v = dep::parse_script1(script)?;
-        dep::invoke_inc_v(self.clone(), vec![], vec![], inc_v).await
     }
 
     pub fn reset(&mut self) {
@@ -754,12 +719,79 @@ impl EdgeEngine {
     }
 }
 
+impl AsEdgeEngine for EdgeEngine {
+    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
+        &'a self,
+        output: &'a1 Path,
+        func: &'a2 str,
+        input: &'a3 Path,
+        input1: &'a4 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+        'a4: 'f,
+    {
+        Box::pin(async move {
+            match func {
+                "new" => func::new(&self.dm, output, input, input1).await,
+                "line" => func::line(&self.dm, output, input, input1).await,
+                "rand" => func::rand(&self.dm, output, input, input1).await,
+                //
+                "+=" => func::append(&self.dm, output, input, input1).await,
+                "append" => func::append(&self.dm, output, input, input1).await,
+                "distinct" => func::distinct(&self.dm, output, input, input1).await,
+                "left" => func::left(&self.dm, output, input, input1).await,
+                "inner" => func::inner(&self.dm, output, input, input1).await,
+                "if" => func::if_(&self.dm, output, input, input1).await,
+                "if0" => func::if_0(&self.dm, output, input, input1).await,
+                "if1" => func::if_1(&self.dm, output, input, input1).await,
+                //
+                "+" => func::add(&self.dm, output, input, input1).await,
+                "-" => func::minus(&self.dm, output, input, input1).await,
+                "*" => func::mul(&self.dm, output, input, input1).await,
+                "/" => func::div(&self.dm, output, input, input1).await,
+                "%" => func::rest(&self.dm, output, input, input1).await,
+                //
+                "==" => func::equal(&self.dm, output, input, input1).await,
+                "!=" => func::not_equal(&self.dm, output, input, input1).await,
+                ">" => func::greater(&self.dm, output, input, input1).await,
+                "<" => func::smaller(&self.dm, output, input, input1).await,
+                //
+                "count" => func::count(&self.dm, output, input, input1).await,
+                "sum" => func::sum(&self.dm, output, input, input1).await,
+                //
+                "=" => func::set(&self.dm, output, input, input1).await,
+                //
+                "slice" => func::slice(&self.dm, output, input, input1).await,
+                "sort" => func::sort(&self.dm, output, input, input1).await,
+                "sort_s" => func::sort_s(&self.dm, output, input, input1).await,
+                "dump" => func::dump(&self.dm, output, input, input1).await,
+                _ => self.dm.call(output, func, input, input1).await,
+            }
+        })
+    }
+
+    fn get_dm(&self) -> &TempDataManager {
+        &self.dm
+    }
+
+    fn divide(&self) -> Box<dyn AsEdgeEngine> {
+        Box::new(Self {
+            dm: TempDataManager::new(self.dm.global.clone()),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use crate::util::{
         data::{AsDataManager, MemDataManager},
+        engine::AsEdgeEngine,
         Path,
     };
 
@@ -849,18 +881,22 @@ mod tests {
 
             // data
             engine
-                .execute_script(&vec![
-                    //
-                    format!("test->test:step1 = ? _"),
-                    //
-                    format!("test->test:step1->test:step2 = test1 _"),
-                ])
+                .execute_script(
+                    &vec![
+                        //
+                        format!("test->test:step1 = ? _"),
+                        //
+                        format!("test->test:step1->test:step2 = test1 _"),
+                    ],
+                    vec![],
+                    vec![],
+                )
                 .await
                 .unwrap();
 
             // rs
             let rs = engine
-                .execute_script(&vec![format!("$->$:output dump test test")])
+                .execute_script(&vec![format!("$->$:output dump test test")], vec![], vec![])
                 .await
                 .unwrap();
 
@@ -897,7 +933,11 @@ mod tests {
 
             // rs
             let rs = engine
-                .execute_script(&vec![format!("$->$:output dump $->$:test $")])
+                .execute_script(
+                    &vec![format!("$->$:output dump $->$:test $")],
+                    vec![],
+                    vec![],
+                )
                 .await
                 .unwrap();
 

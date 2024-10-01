@@ -172,7 +172,7 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use edge_lib::util::engine::{EdgeEngine, ScriptTree1};
+    use edge_lib::util::engine::{AsEdgeEngine, EdgeEngine, ScriptTree1};
     use sqlx::sqlite::SqliteConnectOptions;
 
     use super::*;
