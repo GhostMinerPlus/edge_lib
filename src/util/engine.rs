@@ -187,7 +187,7 @@ mod main {
 
         use crate::util::{
             data::MemDataManager,
-            engine::{main, EdgeEngine, ScriptTree},
+            engine::{main, AsEdgeEngine, EdgeEngine, ScriptTree},
         };
 
         #[test]
@@ -492,6 +492,8 @@ mod main {
 pub trait AsEdgeEngine: Sync + Send {
     fn get_dm(&self) -> &TempDataManager;
 
+    fn reset(&mut self);
+
     fn divide(&self) -> Box<dyn AsEdgeEngine>;
 
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
@@ -556,6 +558,73 @@ pub trait AsEdgeEngine: Sync + Send {
             self.get_dm()
                 .get(&Path::from_str(&format!("$->$:output")))
                 .await
+        })
+    }
+
+    fn dump<'a, 'b, 'c, 'f>(
+        &'a self,
+        addr: &'b Path,
+        paper: &'c str,
+    ) -> Pin<Box<dyn Future<Output = io::Result<json::JsonValue>> + 'f>>
+    where
+        'a: 'f,
+        'b: 'f,
+        'c: 'f,
+    {
+        Box::pin(async move {
+            // root
+            let root_v = self.get_dm().get(addr).await?;
+            let mut rj = json::array![];
+            for root in &root_v {
+                rj.push(crate::util::dump(self.get_dm(), root, paper).await?)
+                    .unwrap();
+            }
+            Ok(rj)
+        })
+    }
+
+    fn load<'a, 'a1, 'a2, 'f>(
+        &'a mut self,
+        data: &'a1 json::JsonValue,
+        addr: &'a2 Path,
+    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            if data.is_null() {
+                return Ok(());
+            }
+
+            if data.is_array() {
+                for item in data.members() {
+                    self.load(item, addr).await?;
+                }
+                return Ok(());
+            }
+
+            if !data.is_object() {
+                self.get_dm()
+                    .append(addr, vec![data.as_str().unwrap().to_string()])
+                    .await?;
+                return Ok(());
+            }
+
+            self.get_dm().append(addr, vec![dep::gen_value()]).await?;
+
+            for (k, v) in data.entries() {
+                let sub_path = Path::from_str(&format!("{}->{k}", addr.to_string()));
+                if v.is_array() {
+                    for item in v.members() {
+                        self.load(item, &sub_path).await?;
+                    }
+                } else {
+                    self.load(v, &sub_path).await?;
+                }
+            }
+            Ok(())
         })
     }
 }
@@ -657,69 +726,13 @@ impl EdgeEngine {
     pub async fn execute2(&mut self, script_tree: &ScriptTree1) -> io::Result<json::JsonValue> {
         main::execute2(self, script_tree).await
     }
-
-    pub fn reset(&mut self) {
-        self.dm.temp = Arc::new(MemDataManager::new(None));
-    }
-
-    pub fn load<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        data: &'a1 json::JsonValue,
-        addr: &'a2 Path,
-    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            if data.is_null() {
-                return Ok(());
-            }
-
-            if data.is_array() {
-                for item in data.members() {
-                    self.load(item, addr).await?;
-                }
-                return Ok(());
-            }
-
-            if !data.is_object() {
-                self.dm
-                    .append(addr, vec![data.as_str().unwrap().to_string()])
-                    .await?;
-                return Ok(());
-            }
-
-            self.dm.append(addr, vec![dep::gen_value()]).await?;
-
-            for (k, v) in data.entries() {
-                let sub_path = Path::from_str(&format!("{}->{k}", addr.to_string()));
-                if v.is_array() {
-                    for item in v.members() {
-                        self.load(item, &sub_path).await?;
-                    }
-                } else {
-                    self.load(v, &sub_path).await?;
-                }
-            }
-            Ok(())
-        })
-    }
-
-    pub async fn dump(&self, addr: &Path, paper: &str) -> io::Result<json::JsonValue> {
-        // root
-        let root_v = self.dm.get(addr).await?;
-        let mut rj = json::array![];
-        for root in &root_v {
-            rj.push(crate::util::dump(&self.dm, root, paper).await?)
-                .unwrap();
-        }
-        Ok(rj)
-    }
 }
 
 impl AsEdgeEngine for EdgeEngine {
+    fn reset(&mut self) {
+        self.dm.temp = Arc::new(MemDataManager::new(None));
+    }
+
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
         output: &'a1 Path,
