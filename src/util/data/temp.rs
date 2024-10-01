@@ -2,7 +2,7 @@ use std::{future, io, pin::Pin, sync::Arc};
 
 use crate::util::{
     data::{Auth, MemDataManager},
-    Path, PathPart,
+    func, Path, PathPart,
 };
 
 use super::AsDataManager;
@@ -332,22 +332,59 @@ impl AsDataManager for TempDataManager {
         'a4: 'f,
     {
         Box::pin(async move {
-            if !output.is_temp() {
-                if let Ok(()) = self
-                    .global
-                    .call(
-                        &self.temp_2_gloabl(output).await?,
-                        func,
-                        &self.temp_2_gloabl(input).await?,
-                        &self.temp_2_gloabl(input1).await?,
-                    )
-                    .await
-                {
-                    return Ok(());
+            match func {
+                "new" => func::new(self, output, input, input1).await,
+                "line" => func::line(self, output, input, input1).await,
+                "rand" => func::rand(self, output, input, input1).await,
+                //
+                "+=" => func::append(self, output, input, input1).await,
+                "append" => func::append(self, output, input, input1).await,
+                "distinct" => func::distinct(self, output, input, input1).await,
+                "left" => func::left(self, output, input, input1).await,
+                "inner" => func::inner(self, output, input, input1).await,
+                "if" => func::if_(self, output, input, input1).await,
+                "if0" => func::if_0(self, output, input, input1).await,
+                "if1" => func::if_1(self, output, input, input1).await,
+                //
+                "+" => func::add(self, output, input, input1).await,
+                "-" => func::minus(self, output, input, input1).await,
+                "*" => func::mul(self, output, input, input1).await,
+                "/" => func::div(self, output, input, input1).await,
+                "%" => func::rest(self, output, input, input1).await,
+                //
+                "==" => func::equal(self, output, input, input1).await,
+                "!=" => func::not_equal(self, output, input, input1).await,
+                ">" => func::greater(self, output, input, input1).await,
+                "<" => func::smaller(self, output, input, input1).await,
+                //
+                "count" => func::count(self, output, input, input1).await,
+                "sum" => func::sum(self, output, input, input1).await,
+                //
+                "=" => func::set(self, output, input, input1).await,
+                //
+                "slice" => func::slice(self, output, input, input1).await,
+                "sort" => func::sort(self, output, input, input1).await,
+                "sort_s" => func::sort_s(self, output, input, input1).await,
+                "dump" => func::dump(self, output, input, input1).await,
+                _ => {
+                    if !output.is_temp() {
+                        if let Ok(()) = self
+                            .global
+                            .call(
+                                &self.temp_2_gloabl(output).await?,
+                                func,
+                                &self.temp_2_gloabl(input).await?,
+                                &self.temp_2_gloabl(input1).await?,
+                            )
+                            .await
+                        {
+                            return Ok(());
+                        }
+                    }
+                    let rs = self.call_and_return(func, input, input1).await?;
+                    self.set(output, rs).await
                 }
             }
-            let rs = self.call_and_return(func, input, input1).await?;
-            self.set(output, rs).await
         })
     }
 }

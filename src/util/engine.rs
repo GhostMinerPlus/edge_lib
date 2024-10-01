@@ -6,10 +6,7 @@ use crate::util::{
     Path,
 };
 
-use super::{
-    data::{MemDataManager, TempDataManager},
-    func,
-};
+use super::data::{MemDataManager, TempDataManager};
 
 mod dep {
     use std::io;
@@ -508,7 +505,10 @@ pub trait AsEdgeEngine: Sync + Send {
         'a1: 'f,
         'a2: 'f,
         'a3: 'f,
-        'a4: 'f;
+        'a4: 'f,
+    {
+        self.get_dm().call(output, func, input, input1)
+    }
 
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
@@ -731,60 +731,6 @@ impl EdgeEngine {
 impl AsEdgeEngine for EdgeEngine {
     fn reset(&mut self) {
         self.dm.temp = Arc::new(MemDataManager::new(None));
-    }
-
-    fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
-        &'a self,
-        output: &'a1 Path,
-        func: &'a2 str,
-        input: &'a3 Path,
-        input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-        'a3: 'f,
-        'a4: 'f,
-    {
-        Box::pin(async move {
-            match func {
-                "new" => func::new(&self.dm, output, input, input1).await,
-                "line" => func::line(&self.dm, output, input, input1).await,
-                "rand" => func::rand(&self.dm, output, input, input1).await,
-                //
-                "+=" => func::append(&self.dm, output, input, input1).await,
-                "append" => func::append(&self.dm, output, input, input1).await,
-                "distinct" => func::distinct(&self.dm, output, input, input1).await,
-                "left" => func::left(&self.dm, output, input, input1).await,
-                "inner" => func::inner(&self.dm, output, input, input1).await,
-                "if" => func::if_(&self.dm, output, input, input1).await,
-                "if0" => func::if_0(&self.dm, output, input, input1).await,
-                "if1" => func::if_1(&self.dm, output, input, input1).await,
-                //
-                "+" => func::add(&self.dm, output, input, input1).await,
-                "-" => func::minus(&self.dm, output, input, input1).await,
-                "*" => func::mul(&self.dm, output, input, input1).await,
-                "/" => func::div(&self.dm, output, input, input1).await,
-                "%" => func::rest(&self.dm, output, input, input1).await,
-                //
-                "==" => func::equal(&self.dm, output, input, input1).await,
-                "!=" => func::not_equal(&self.dm, output, input, input1).await,
-                ">" => func::greater(&self.dm, output, input, input1).await,
-                "<" => func::smaller(&self.dm, output, input, input1).await,
-                //
-                "count" => func::count(&self.dm, output, input, input1).await,
-                "sum" => func::sum(&self.dm, output, input, input1).await,
-                //
-                "=" => func::set(&self.dm, output, input, input1).await,
-                //
-                "slice" => func::slice(&self.dm, output, input, input1).await,
-                "sort" => func::sort(&self.dm, output, input, input1).await,
-                "sort_s" => func::sort_s(&self.dm, output, input, input1).await,
-                "dump" => func::dump(&self.dm, output, input, input1).await,
-                _ => self.dm.call(output, func, input, input1).await,
-            }
-        })
     }
 
     fn get_dm(&self) -> &TempDataManager {
