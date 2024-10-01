@@ -489,9 +489,9 @@ mod main {
 pub trait AsEdgeEngine: Sync + Send {
     fn get_dm(&self) -> &TempDataManager;
 
-    fn reset(&mut self);
+    fn get_dm_mut(&mut self) -> &mut TempDataManager;
 
-    fn divide(&self) -> Box<dyn AsEdgeEngine>;
+    fn reset(&mut self);
 
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
@@ -548,10 +548,11 @@ pub trait AsEdgeEngine: Sync + Send {
                 {
                     let input_item_v = self.get_dm().get(&inc.input).await?;
                     let input1_item_v = self.get_dm().get(&inc.input1).await?;
-                    let mut new_engine = self.divide();
-                    let rs = new_engine
+                    let o_dm = self.get_dm_mut().push();
+                    let rs = self
                         .execute_script(&func_name_v, input_item_v, input1_item_v)
                         .await?;
+                    self.get_dm_mut().pop(o_dm);
                     self.get_dm().set(&inc.output, rs).await?;
                 }
             }
@@ -737,10 +738,8 @@ impl AsEdgeEngine for EdgeEngine {
         &self.dm
     }
 
-    fn divide(&self) -> Box<dyn AsEdgeEngine> {
-        Box::new(Self {
-            dm: TempDataManager::new(self.dm.global.clone()),
-        })
+    fn get_dm_mut(&mut self) -> &mut TempDataManager {
+        &mut self.dm
     }
 }
 
