@@ -81,6 +81,39 @@ impl TempDataManager {
             }
         })
     }
+
+    /// # Convert temp path to gloabl path.
+    #[async_recursion::async_recursion]
+    pub async fn temp_2_gloabl(&self, path: &Path) -> io::Result<Path> {
+        match path.first_part() {
+            PathPart::Pure(part_path) => {
+                let item_v = self.global.get(&part_path).await?;
+
+                self.temp_2_gloabl(&Path {
+                    root_v: item_v,
+                    step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                })
+                .await
+            }
+            PathPart::Temp(part_path) => {
+                let item_v = self.temp.get(&part_path).await?;
+
+                self.temp_2_gloabl(&Path {
+                    root_v: item_v,
+                    step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                })
+                .await
+            }
+            PathPart::EntirePure => Ok(path.clone()),
+            PathPart::EntireTemp => {
+                let item_v = self.temp.get(&path).await?;
+                Ok(Path {
+                    root_v: item_v,
+                    step_v: vec![],
+                })
+            }
+        }
+    }
 }
 
 impl AsDataManager for TempDataManager {
@@ -212,34 +245,8 @@ impl AsDataManager for TempDataManager {
         }
         let path = path.clone();
         Box::pin(async move {
-            match path.first_part() {
-                PathPart::Pure(part_path) => {
-                    let item_v = self.global.get(&part_path).await?;
-
-                    self.get(&Path {
-                        root_v: item_v,
-                        step_v: path.step_v[part_path.step_v.len()..].to_vec(),
-                    })
-                    .await
-                }
-                PathPart::Temp(part_path) => {
-                    let item_v = self.temp.get(&part_path).await?;
-
-                    self.get(&Path {
-                        root_v: item_v,
-                        step_v: path.step_v[part_path.step_v.len()..].to_vec(),
-                    })
-                    .await
-                }
-                PathPart::EntirePure => {
-                    let item_v = self.global.get(&path).await?;
-                    Ok(item_v)
-                }
-                PathPart::EntireTemp => {
-                    let item_v = self.temp.get(&path).await?;
-                    Ok(item_v)
-                }
-            }
+            let gloabl_path = self.temp_2_gloabl(&path).await?;
+            self.global.get(&gloabl_path).await
         })
     }
 
@@ -274,7 +281,42 @@ impl AsDataManager for TempDataManager {
         })
     }
 
-    #[allow(unused)]
+    fn call_and_return<'a, 'a1, 'a2, 'a3, 'f>(
+        &'a self,
+        func: &'a1 str,
+        input: &'a2 Path,
+        input1: &'a3 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+    {
+        Box::pin(async move {
+            match func {
+                // while
+                "while0" => {
+                    self.while0(input).await?;
+                    Ok(vec![])
+                }
+                "while1" => {
+                    self.while1(input).await?;
+                    Ok(vec![])
+                }
+                _ => {
+                    self.global
+                        .call_and_return(
+                            func,
+                            &self.temp_2_gloabl(input).await?,
+                            &self.temp_2_gloabl(input1).await?,
+                        )
+                        .await
+                }
+            }
+        })
+    }
+
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
         output: &'a1 Path,
@@ -290,12 +332,22 @@ impl AsDataManager for TempDataManager {
         'a4: 'f,
     {
         Box::pin(async move {
-            match func {
-                // while
-                "while0" => self.while0(input).await,
-                "while1" => self.while1(input).await,
-                _ => Err(io::Error::other("Not found!")),
+            if !output.is_temp() {
+                if let Ok(()) = self
+                    .global
+                    .call(
+                        &self.temp_2_gloabl(output).await?,
+                        func,
+                        &self.temp_2_gloabl(input).await?,
+                        &self.temp_2_gloabl(input1).await?,
+                    )
+                    .await
+                {
+                    return Ok(());
+                }
             }
+            let rs = self.call_and_return(func, input, input1).await?;
+            self.set(output, rs).await
         })
     }
 }

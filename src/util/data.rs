@@ -81,6 +81,25 @@ pub trait AsDataManager: Send + Sync {
         'a3: 'f,
         'a4: 'f,
     {
+        Box::pin(async move {
+            let rs = self.call_and_return(func, input, input1).await?;
+            self.set(output, rs).await
+        })
+    }
+
+    #[allow(unused)]
+    fn call_and_return<'a, 'a1, 'a2, 'a3, 'f>(
+        &'a self,
+        func: &'a1 str,
+        input: &'a2 Path,
+        input1: &'a3 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+        'a3: 'f,
+    {
         Box::pin(future::ready(Err(io::Error::other("Not found!"))))
     }
 }
