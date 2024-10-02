@@ -521,7 +521,6 @@ pub trait AsEdgeEngine: Sync + Send {
     where
         'a: 'f,
         'a1: 'f,
-        Self: Sized,
     {
         Box::pin(async move {
             let mut inc_v = dep::parse_script1(&script)?;
