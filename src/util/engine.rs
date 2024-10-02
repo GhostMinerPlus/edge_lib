@@ -586,7 +586,7 @@ pub trait AsEdgeEngine: Sync + Send {
     }
 
     fn load<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
+        &'a self,
         data: &'a1 json::JsonValue,
         addr: &'a2 Path,
     ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
