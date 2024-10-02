@@ -20,7 +20,7 @@ mod dep {
 
     #[async_recursion::async_recursion]
     pub async fn inner_execute(
-        engine: &mut dyn AsEdgeEngine,
+        engine: &mut impl AsEdgeEngine,
         input: &str,
         script_tree: &ScriptTree,
         out_tree: &mut json::JsonValue,
@@ -57,7 +57,7 @@ mod dep {
 
     #[async_recursion::async_recursion]
     pub async fn inner_execute1(
-        engine: &mut dyn AsEdgeEngine,
+        engine: &mut impl AsEdgeEngine,
         input: &str,
         script_tree: &ScriptTree1,
         out_tree: &mut json::JsonValue,
@@ -514,24 +514,6 @@ pub trait AsEdgeEngine: Sync + Send {
         self.get_dm().call(output, func, input, input1)
     }
 
-    fn execute_script_with_temp<'a, 'a1, 'f>(
-        &'a mut self,
-        script: &'a1 [String],
-        temp: Arc<MemDataManager>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-    {
-        Box::pin(async move {
-            let o_dm = self.get_dm().temp.clone();
-            self.get_dm_mut().temp = temp;
-            let rs = self.execute_script(script).await;
-            self.get_dm_mut().temp = o_dm;
-            rs
-        })
-    }
-
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 [String],
@@ -539,6 +521,7 @@ pub trait AsEdgeEngine: Sync + Send {
     where
         'a: 'f,
         'a1: 'f,
+        Self: Sized,
     {
         Box::pin(async move {
             let mut inc_v = dep::parse_script1(&script)?;
@@ -567,7 +550,10 @@ pub trait AsEdgeEngine: Sync + Send {
                     mem.set(&Path::from_str("$->$:input1"), input1_item_v)
                         .await?;
 
-                    let rs = self.execute_script_with_temp(&func_name_v, mem).await?;
+                    let o_dm = self.get_dm_mut().temp.clone();
+                    let rs = self.execute_script(&func_name_v).await;
+                    self.get_dm_mut().temp = o_dm;
+                    let rs = rs?;
                     self.get_dm().set(&inc.output, rs).await?;
                 }
             }
@@ -596,45 +582,6 @@ pub trait AsEdgeEngine: Sync + Send {
                     .unwrap();
             }
             Ok(rj)
-        })
-    }
-
-    fn load_with_temp<'a, 'a1, 'a2, 'f>(
-        &'a mut self,
-        data: &'a1 json::JsonValue,
-        addr: &'a2 Path,
-        temp: Arc<MemDataManager>,
-    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a2: 'f,
-    {
-        Box::pin(async move {
-            let o_dm = self.get_dm().temp.clone();
-            self.get_dm_mut().temp = temp;
-            let rs = self.load(data, addr).await;
-            self.get_dm_mut().temp = o_dm;
-            rs
-        })
-    }
-
-    fn with_temp<'a, 'a1, 'f>(
-        &'a mut self,
-        temp: Arc<MemDataManager>,
-        fu: Box<dyn FnOnce(&'a1 mut Self, Arc<MemDataManager>) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>>,
-    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
-    where
-        'a: 'f,
-        'a1: 'f,
-        'a: 'a1,
-        Self: Sized,
-    {
-        Box::pin(async move {
-            let o_dm = self.get_dm().temp.clone();
-            self.get_dm_mut().temp = temp;
-            let rs = fu(self, o_dm).await;
-            rs
         })
     }
 
@@ -950,38 +897,6 @@ mod tests {
 
             // assert
             assert_eq!(rj[0]["$:test"][0], "test");
-        })
-    }
-
-    #[test]
-    fn test_with_temp() {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            // dm
-            let dm = Arc::new(MemDataManager::new(None));
-
-            // engine
-            let mut engine = EdgeEngine::new(dm, "root").await;
-
-            let temp = Arc::new(MemDataManager::new(None));
-
-            engine
-                .with_temp(
-                    temp.clone(),
-                    Box::new(|engine, o_dm| {
-                        Box::pin(async move {
-                            let rs = engine.execute_script(&vec![]).await?;
-                            println!("{:?}", rs);
-                            engine.get_dm_mut().temp = o_dm;
-                            Ok(())
-                        })
-                    }),
-                )
-                .await
-                .unwrap();
         })
     }
 }
