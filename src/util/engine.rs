@@ -498,7 +498,7 @@ pub trait AsEdgeEngine: Sync + Send {
     fn reset(&mut self);
 
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
-        &'a self,
+        &'a mut self,
         output: &'a1 Path,
         func: &'a2 str,
         input: &'a3 Path,
