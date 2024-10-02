@@ -566,7 +566,8 @@ pub trait AsEdgeEngine: Sync + Send {
                     mem.set(&Path::from_str("$->$:input"), input_item_v).await?;
                     mem.set(&Path::from_str("$->$:input1"), input1_item_v)
                         .await?;
-                    let rs = self.execute_script_with_temp(script, mem).await?;
+
+                    let rs = self.execute_script_with_temp(&func_name_v, mem).await?;
                     self.get_dm().set(&inc.output, rs).await?;
                 }
             }
@@ -614,6 +615,25 @@ pub trait AsEdgeEngine: Sync + Send {
             self.get_dm_mut().temp = temp;
             let rs = self.load(data, addr).await;
             self.get_dm_mut().temp = o_dm;
+            rs
+        })
+    }
+
+    fn with_temp<'a, 'a1, 'f>(
+        &'a mut self,
+        temp: Arc<MemDataManager>,
+        fu: Box<dyn FnOnce(&'a1 mut Self, Arc<MemDataManager>) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>>,
+    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a: 'a1,
+        Self: Sized,
+    {
+        Box::pin(async move {
+            let o_dm = self.get_dm().temp.clone();
+            self.get_dm_mut().temp = temp;
+            let rs = fu(self, o_dm).await;
             rs
         })
     }
@@ -930,6 +950,38 @@ mod tests {
 
             // assert
             assert_eq!(rj[0]["$:test"][0], "test");
+        })
+    }
+
+    #[test]
+    fn test_with_temp() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            // dm
+            let dm = Arc::new(MemDataManager::new(None));
+
+            // engine
+            let mut engine = EdgeEngine::new(dm, "root").await;
+
+            let temp = Arc::new(MemDataManager::new(None));
+
+            engine
+                .with_temp(
+                    temp.clone(),
+                    Box::new(|engine, o_dm| {
+                        Box::pin(async move {
+                            let rs = engine.execute_script(&vec![]).await?;
+                            println!("{:?}", rs);
+                            engine.get_dm_mut().temp = o_dm;
+                            Ok(())
+                        })
+                    }),
+                )
+                .await
+                .unwrap();
         })
     }
 }
