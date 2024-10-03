@@ -572,7 +572,7 @@ pub trait AsEdgeEngine: Sync + Send {
         &'a self,
         addr: &'b Path,
         paper: &'c str,
-    ) -> Pin<Box<dyn Future<Output = io::Result<json::JsonValue>> + 'f>>
+    ) -> Pin<Box<dyn Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
     where
         'a: 'f,
         'b: 'f,
@@ -594,7 +594,7 @@ pub trait AsEdgeEngine: Sync + Send {
         &'a self,
         data: &'a1 json::JsonValue,
         addr: &'a2 Path,
-    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'f>>
+    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
