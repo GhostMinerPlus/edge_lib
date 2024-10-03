@@ -544,15 +544,21 @@ pub trait AsEdgeEngine: Sync + Send {
                 {
                     let input_item_v = self.get_dm().get(&inc.input).await?;
                     let input1_item_v = self.get_dm().get(&inc.input1).await?;
+
                     let mem = Arc::new(MemDataManager::new(None));
+
                     mem.set(&Path::from_str("$->$:input"), input_item_v).await?;
                     mem.set(&Path::from_str("$->$:input1"), input1_item_v)
                         .await?;
 
                     let o_dm = self.get_dm_mut().temp.clone();
+
                     let rs = self.execute_script(&func_name_v).await;
+
                     self.get_dm_mut().temp = o_dm;
+
                     let rs = rs?;
+
                     self.get_dm().set(&inc.output, rs).await?;
                 }
             }
