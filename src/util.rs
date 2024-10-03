@@ -33,13 +33,6 @@ mod main {
                 step_v: Vec::new(),
             };
         }
-        log::debug!("Path::from_str: {path}");
-        if path.starts_with('\'') && path.ends_with('\'') {
-            return Path {
-                root_v: vec![util::escape_word(path)],
-                step_v: Vec::new(),
-            };
-        }
 
         let s = find_arrrow(path).unwrap_or(path.len());
         let root_v = path[0..s]
@@ -391,4 +384,15 @@ where
 
         Ok(rj)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Path;
+
+    #[test]
+    fn test_root_v() {
+        let path = Path::from_str("'$->$:output\\s+\\s1\\s1','$->$:output\\s+=\\s$->$:output\\s1'");
+        assert_eq!(path.root_v.len(), 2)
+    }
 }
