@@ -347,8 +347,8 @@ pub fn str_2_rs(s: &str) -> Vec<String> {
     rs
 }
 
-pub(crate) fn dump<'a1, 'a2, 'a3, 'f>(
-    dm: &'a1 dyn AsDataManager,
+pub(crate) fn dump<'a1, 'a2, 'a3, 'f, DM>(
+    dm: &'a1 DM,
     root: &'a2 str,
     space: &'a3 str,
 ) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
@@ -356,6 +356,7 @@ where
     'a1: 'f,
     'a2: 'f,
     'a3: 'f,
+    DM: AsDataManager + ?Sized,
 {
     Box::pin(async move {
         let code_v = dm.get_code_v(root, space).await?;
@@ -384,6 +385,10 @@ where
 
         Ok(rj)
     })
+}
+
+pub fn gen_value() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 #[cfg(test)]

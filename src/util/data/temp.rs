@@ -5,25 +5,20 @@ use crate::util::{
     func, Path, PathPart,
 };
 
-use super::AsDataManager;
+use super::{AsDataManager, AsStack};
 
 #[derive(Clone)]
 pub struct TempDataManager {
     pub global: Arc<dyn AsDataManager>,
-    pub temp: Arc<MemDataManager>,
+    pub temp: Vec<MemDataManager>,
 }
 
 impl TempDataManager {
     pub fn new(global: Arc<dyn AsDataManager>) -> Self {
-        let auth = global.get_auth().clone();
         Self {
             global,
-            temp: Arc::new(MemDataManager::new(auth)),
+            temp: vec![MemDataManager::new(None)],
         }
-    }
-
-    pub async fn reset(&self) -> io::Result<()> {
-        self.temp.clear().await
     }
 
     pub fn while1(
@@ -41,7 +36,7 @@ impl TempDataManager {
             };
             loop {
                 if path.is_temp() {
-                    if !this.temp.get(&path).await?.is_empty() {
+                    if !this.temp.last().unwrap().get(&path).await?.is_empty() {
                         return Ok(());
                     }
                 } else {
@@ -69,7 +64,7 @@ impl TempDataManager {
             };
             loop {
                 if path.is_temp() {
-                    if this.temp.get(&path).await?.is_empty() {
+                    if this.temp.last().unwrap().get(&path).await?.is_empty() {
                         return Ok(());
                     }
                 } else {
@@ -96,7 +91,7 @@ impl TempDataManager {
                 .await
             }
             PathPart::Temp(part_path) => {
-                let item_v = self.temp.get(&part_path).await?;
+                let item_v = self.temp.last().unwrap().get(&part_path).await?;
 
                 self.temp_2_gloabl(&Path {
                     root_v: item_v,
@@ -106,7 +101,7 @@ impl TempDataManager {
             }
             PathPart::EntirePure => Ok(path.clone()),
             PathPart::EntireTemp => {
-                let item_v = self.temp.get(&path).await?;
+                let item_v = self.temp.last().unwrap().get(&path).await?;
                 Ok(Path {
                     root_v: item_v,
                     step_v: vec![],
@@ -116,16 +111,29 @@ impl TempDataManager {
     }
 }
 
+impl AsStack for TempDataManager {
+    fn push<'a, 'f>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>> {
+        self.temp.push(MemDataManager::new(None));
+        Box::pin(future::ready(Ok(())))
+    }
+
+    fn pop<'a, 'f>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>> {
+        if self.temp.len() > 1 {
+            self.temp.pop();
+        } else {
+            self.temp = vec![MemDataManager::new(None)];
+        }
+        Box::pin(future::ready(Ok(())))
+    }
+}
+
 impl AsDataManager for TempDataManager {
     fn get_auth(&self) -> &Auth {
         self.global.get_auth()
-    }
-
-    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
-        Arc::new(Self {
-            global: self.global.divide(auth.clone()),
-            temp: Arc::new(MemDataManager::new(auth)),
-        })
     }
 
     fn append<'a, 'a1, 'f>(
@@ -149,6 +157,8 @@ impl AsDataManager for TempDataManager {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
                 self.temp
+                    .last()
+                    .unwrap()
                     .append(
                         &Path {
                             root_v,
@@ -201,6 +211,8 @@ impl AsDataManager for TempDataManager {
                     root_v.len()
                 );
                 self.temp
+                    .last()
+                    .unwrap()
                     .set(
                         &Path {
                             root_v,
@@ -250,18 +262,6 @@ impl AsDataManager for TempDataManager {
         })
     }
 
-    fn clear<'a, 'f>(
-        &'a self,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f,
-    {
-        Box::pin(async move {
-            self.temp.clear().await?;
-            self.global.clear().await
-        })
-    }
-
     fn get_code_v<'a, 'a1, 'a2, 'f>(
         &'a self,
         root: &'a1 str,
@@ -274,7 +274,7 @@ impl AsDataManager for TempDataManager {
     {
         Box::pin(async move {
             if space == "$" {
-                self.temp.get_code_v(root, space).await
+                self.temp.last().unwrap().get_code_v(root, space).await
             } else {
                 self.global.get_code_v(root, space).await
             }
@@ -330,6 +330,7 @@ impl AsDataManager for TempDataManager {
         'a2: 'f,
         'a3: 'f,
         'a4: 'f,
+        Self: Sized + 'static,
     {
         Box::pin(async move {
             match func {

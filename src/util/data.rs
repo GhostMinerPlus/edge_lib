@@ -1,4 +1,4 @@
-use std::{collections::HashSet, future, io, pin::Pin, sync::Arc};
+use std::{collections::HashSet, future::Future, io, pin::Pin};
 
 use crate::util::Path;
 
@@ -17,8 +17,6 @@ pub struct PermissionPair {
 }
 
 pub trait AsDataManager: Send + Sync {
-    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager>;
-
     fn get_auth(&self) -> &Auth;
 
     /// Get all targets from `source->code`
@@ -50,12 +48,6 @@ pub trait AsDataManager: Send + Sync {
         'a: 'f,
         'a1: 'f;
 
-    fn clear<'a, 'f>(
-        &'a self,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f;
-
     fn get_code_v<'a, 'a1, 'a2, 'f>(
         &'a self,
         root: &'a1 str,
@@ -66,7 +58,6 @@ pub trait AsDataManager: Send + Sync {
         'a1: 'f,
         'a2: 'f;
 
-    #[allow(unused)]
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
         &'a self,
         output: &'a1 Path,
@@ -100,6 +91,82 @@ pub trait AsDataManager: Send + Sync {
         'a2: 'f,
         'a3: 'f,
     {
-        Box::pin(future::ready(Err(io::Error::other("Not found!"))))
+        todo!()
     }
+
+    fn dump<'a, 'b, 'c, 'f>(
+        &'a self,
+        addr: &'b Path,
+        paper: &'c str,
+    ) -> Pin<Box<dyn Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
+    where
+        'a: 'f,
+        'b: 'f,
+        'c: 'f,
+    {
+        Box::pin(async move {
+            // root
+            let root_v = self.get(addr).await?;
+            let mut rj = json::array![];
+            for root in &root_v {
+                rj.push(crate::util::dump(self, root, paper).await?)
+                    .unwrap();
+            }
+            Ok(rj)
+        })
+    }
+
+    fn load<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        data: &'a1 json::JsonValue,
+        addr: &'a2 Path,
+    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move {
+            if data.is_null() {
+                return Ok(());
+            }
+
+            if data.is_array() {
+                for item in data.members() {
+                    self.load(item, addr).await?;
+                }
+                return Ok(());
+            }
+
+            if !data.is_object() {
+                self.append(addr, vec![data.as_str().unwrap().to_string()])
+                    .await?;
+                return Ok(());
+            }
+
+            self.append(addr, vec![super::gen_value()]).await?;
+
+            for (k, v) in data.entries() {
+                let sub_path = Path::from_str(&format!("{}->{k}", addr.to_string()));
+                if v.is_array() {
+                    for item in v.members() {
+                        self.load(item, &sub_path).await?;
+                    }
+                } else {
+                    self.load(v, &sub_path).await?;
+                }
+            }
+            Ok(())
+        })
+    }
+}
+
+pub trait AsStack {
+    fn push<'a, 'f>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>;
+
+    fn pop<'a, 'f>(
+        &'a mut self,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>;
 }

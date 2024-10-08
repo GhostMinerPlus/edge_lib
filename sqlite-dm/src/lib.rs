@@ -1,5 +1,5 @@
 use sqlx::{Pool, Sqlite};
-use std::{future, io, pin::Pin, sync::Arc};
+use std::{future, io, pin::Pin};
 
 use edge_lib::util::{
     data::{AsDataManager, Auth},
@@ -37,13 +37,6 @@ impl SqliteDataManager {
 impl AsDataManager for SqliteDataManager {
     fn get_auth(&self) -> &Auth {
         &self.auth
-    }
-
-    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
-        Arc::new(Self {
-            auth,
-            pool: self.pool.clone(),
-        })
     }
 
     fn append<'a, 'a1, 'f>(
@@ -137,25 +130,6 @@ impl AsDataManager for SqliteDataManager {
         })
     }
 
-    fn clear<'a, 'f>(
-        &'a self,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f,
-    {
-        Box::pin(async move {
-            match &self.auth {
-                Some(auth) => {
-                    for paper in &auth.writer {
-                        let _ = dao::clear_paper(self.pool.clone(), paper).await;
-                    }
-                    Ok(())
-                }
-                None => dao::clear(self.pool.clone()).await,
-            }
-        })
-    }
-
     fn get_code_v<'a, 'a1, 'a2, 'f>(
         &'a self,
         root: &'a1 str,
@@ -172,10 +146,16 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use edge_lib::util::engine::{AsEdgeEngine, EdgeEngine, ScriptTree1};
+    use std::sync::Arc;
+
+    use edge_lib::util::{
+        data::{AsDataManager, AsStack, TempDataManager},
+        engine::AsEdgeEngine,
+        Path,
+    };
     use sqlx::sqlite::SqliteConnectOptions;
 
-    use super::*;
+    use crate::SqliteDataManager;
 
     #[test]
     fn test_root_type() {
@@ -188,24 +168,15 @@ mod tests {
                 sqlx::SqlitePool::connect_with(SqliteConnectOptions::new().filename("test.db"))
                     .await
                     .unwrap();
-            let dm = Arc::new(SqliteDataManager::new(pool, None));
-            dm.init().await;
-            let mut engine = EdgeEngine::new(dm, "root").await;
-            engine
-                .execute2(&ScriptTree1 {
-                    script: vec!["root->type = user _".to_string()],
-                    name: "rs".to_string(),
-                    next_v: vec![],
-                })
+            let global = SqliteDataManager::new(pool, None);
+            global.init().await;
+            let mut dm = TempDataManager::new(Arc::new(global));
+            dm.execute_script(&vec!["root->type = user _".to_string()])
                 .await
                 .unwrap();
-            engine.reset();
+            dm.pop().await.unwrap();
 
-            let rs = engine
-                .get_dm()
-                .get(&Path::from_str("root->type"))
-                .await
-                .unwrap();
+            let rs = dm.get(&Path::from_str("root->type")).await.unwrap();
             assert_eq!(rs[0], "user")
         })
     }

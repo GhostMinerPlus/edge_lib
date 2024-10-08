@@ -147,23 +147,6 @@ pub async fn delete_edge_with_source_code(
     main::delete_edge_with_source_code(pool, source, paper, code).await
 }
 
-pub async fn clear(pool: Pool<Sqlite>) -> io::Result<()> {
-    sqlx::query("delete from edge_t where 1 = 1")
-        .execute(&pool)
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    Ok(())
-}
-
-pub async fn clear_paper(pool: Pool<Sqlite>, paper: &str) -> io::Result<()> {
-    sqlx::query("delete from edge_t where paper = ?")
-        .bind(paper)
-        .execute(&pool)
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    Ok(())
-}
-
 pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> io::Result<Vec<String>> {
     Ok(
         sqlx::query("select code from edge_t where source = ? and paper = ?")

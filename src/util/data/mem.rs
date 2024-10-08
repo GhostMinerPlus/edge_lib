@@ -80,35 +80,8 @@ impl MemDataManager {
 }
 
 impl AsDataManager for MemDataManager {
-    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
-        Arc::new(Self {
-            auth,
-            mem_table: self.mem_table.clone(),
-        })
-    }
-
     fn get_auth(&self) -> &Auth {
         &self.auth
-    }
-
-    fn clear<'a, 'f>(
-        &'a self,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
-    where
-        'a: 'f,
-    {
-        Box::pin(async move {
-            let mut mem_table = self.mem_table.lock().await;
-            match &self.auth {
-                Some(auth) => {
-                    for paper in &auth.writer {
-                        mem_table.clear_paper(paper);
-                    }
-                }
-                None => mem_table.clear(),
-            }
-            Ok(())
-        })
     }
 
     fn append<'a, 'a1, 'f>(

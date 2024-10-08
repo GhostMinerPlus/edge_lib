@@ -22,7 +22,7 @@ mod inner {
 
 pub async fn append<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let mut input1_item_v = dm.get(input1).await?;
     if output == input {
