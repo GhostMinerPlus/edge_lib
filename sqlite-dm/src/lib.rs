@@ -40,7 +40,7 @@ impl AsDataManager for SqliteDataManager {
     }
 
     fn append<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -51,8 +51,8 @@ impl AsDataManager for SqliteDataManager {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mut path = path.clone();
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
@@ -69,7 +69,7 @@ impl AsDataManager for SqliteDataManager {
     }
 
     fn set<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -80,8 +80,8 @@ impl AsDataManager for SqliteDataManager {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mut path = path.clone();
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
@@ -146,8 +146,6 @@ impl AsDataManager for SqliteDataManager {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use edge_lib::util::{
         data::{AsDataManager, AsStack, TempDataManager},
         engine::AsEdgeEngine,
@@ -170,7 +168,7 @@ mod tests {
                     .unwrap();
             let global = SqliteDataManager::new(pool, None);
             global.init().await;
-            let mut dm = TempDataManager::new(Arc::new(global));
+            let mut dm = TempDataManager::new(Box::new(global));
             dm.execute_script(&vec!["root->type = user _".to_string()])
                 .await
                 .unwrap();

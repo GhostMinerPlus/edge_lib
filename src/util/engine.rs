@@ -166,8 +166,6 @@ pub struct ScriptTree1 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::util::{
         data::{AsDataManager, AsStack, MemDataManager, TempDataManager},
         engine::AsEdgeEngine,
@@ -181,7 +179,7 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let dm = Arc::new(MemDataManager::new(None));
+            let dm = Box::new(MemDataManager::new(None));
             let mut engine = TempDataManager::new(dm);
             engine
                 .execute_script(&vec![
@@ -200,37 +198,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rec() {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            let dm = Arc::new(MemDataManager::new(None));
-            let mut engine = TempDataManager::new(dm);
-
-            let mut engine1 = engine.clone();
-            rt.spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                engine1
-                    .execute_script(&vec!["test->flag = 1 _".to_string()])
-                    .await
-                    .unwrap();
-                engine1.pop().await.unwrap();
-            });
-
-            let handle = rt.spawn(async move {
-                engine
-                    .execute_script(&vec!["_ while1 test->flag _".to_string()])
-                    .await
-                    .unwrap();
-            });
-            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-            assert!(handle.is_finished());
-        });
-    }
-
-    #[test]
     fn test_dump() {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -238,7 +205,7 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             // dm
-            let dm = Arc::new(MemDataManager::new(None));
+            let dm = Box::new(MemDataManager::new(None));
 
             // engine
             let mut engine = TempDataManager::new(dm);
@@ -276,7 +243,7 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             // dm
-            let dm = Arc::new(MemDataManager::new(None));
+            let dm = Box::new(MemDataManager::new(None));
 
             // engine
             let mut engine = TempDataManager::new(dm);

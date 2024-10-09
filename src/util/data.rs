@@ -21,7 +21,7 @@ pub trait AsDataManager: Send + Sync {
 
     /// Get all targets from `source->code`
     fn append<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -31,7 +31,7 @@ pub trait AsDataManager: Send + Sync {
 
     /// Get all targets from `source->code`
     fn set<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -59,7 +59,7 @@ pub trait AsDataManager: Send + Sync {
         'a2: 'f;
 
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
-        &'a self,
+        &'a mut self,
         output: &'a1 Path,
         func: &'a2 str,
         input: &'a3 Path,
@@ -80,7 +80,7 @@ pub trait AsDataManager: Send + Sync {
 
     #[allow(unused)]
     fn call_and_return<'a, 'a1, 'a2, 'a3, 'f>(
-        &'a self,
+        &'a mut self,
         func: &'a1 str,
         input: &'a2 Path,
         input1: &'a3 Path,
@@ -95,7 +95,7 @@ pub trait AsDataManager: Send + Sync {
     }
 
     fn dump<'a, 'b, 'c, 'f>(
-        &'a self,
+        &'a mut self,
         addr: &'b Path,
         paper: &'c str,
     ) -> Pin<Box<dyn Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
@@ -117,7 +117,7 @@ pub trait AsDataManager: Send + Sync {
     }
 
     fn load<'a, 'a1, 'a2, 'f>(
-        &'a self,
+        &'a mut self,
         data: &'a1 json::JsonValue,
         addr: &'a2 Path,
     ) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'f>>

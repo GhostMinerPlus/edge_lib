@@ -21,7 +21,7 @@ mod main {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let dm = MemDataManager::new(None);
+                    let mut dm = MemDataManager::new(None);
                     dm.set(&Path::from_str("root->web_server"), vec!["id".to_string()])
                         .await
                         .unwrap();
@@ -41,7 +41,7 @@ mod main {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let dm = MemDataManager::new(None);
+                    let mut dm = MemDataManager::new(None);
                     dm.set(&Path::from_str("root->web_server"), vec!["id".to_string()])
                         .await
                         .unwrap();
@@ -85,7 +85,7 @@ impl AsDataManager for MemDataManager {
     }
 
     fn append<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -96,8 +96,8 @@ impl AsDataManager for MemDataManager {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mut path = path.clone();
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
@@ -116,7 +116,7 @@ impl AsDataManager for MemDataManager {
     }
 
     fn set<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -127,8 +127,8 @@ impl AsDataManager for MemDataManager {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let mut path = path.clone();
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {

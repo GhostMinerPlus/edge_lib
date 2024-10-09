@@ -20,7 +20,7 @@ mod inner {
     }
 }
 
-pub async fn append<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn append<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + ?Sized,
 {
@@ -35,7 +35,7 @@ where
 }
 
 #[allow(unused)]
-pub async fn distinct<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn distinct<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -51,7 +51,7 @@ where
     .await
 }
 
-pub async fn left<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn left<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -70,7 +70,7 @@ where
     .await
 }
 
-pub async fn inner<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn inner<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -81,7 +81,7 @@ where
         .await
 }
 
-pub async fn if_<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn if_<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -95,7 +95,7 @@ where
     dm.set(output, rs).await
 }
 
-pub async fn if_0<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn if_0<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -109,7 +109,7 @@ where
     dm.set(output, rs).await
 }
 
-pub async fn if_1<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn if_1<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -124,7 +124,7 @@ where
 }
 
 #[allow(unused)]
-pub async fn set<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn set<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -132,7 +132,7 @@ where
     dm.set(output, input_item_v).await
 }
 
-pub async fn add<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn add<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -155,7 +155,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn minus<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn minus<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -178,7 +178,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn mul<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn mul<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -201,7 +201,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn div<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn div<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -224,7 +224,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn rest<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn rest<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -247,7 +247,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn equal<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn equal<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -263,7 +263,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn not_equal<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn not_equal<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -279,7 +279,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn greater<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn greater<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -303,7 +303,7 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn smaller<DM>(dm: &DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn smaller<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
     DM: AsDataManager + Sync + Send + 'static + ?Sized,
 {
@@ -328,7 +328,7 @@ where
 }
 
 pub async fn new(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -350,7 +350,7 @@ pub async fn new(
 
 #[allow(unused)]
 pub async fn line(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -371,7 +371,7 @@ pub async fn line(
 
 #[allow(unused)]
 pub async fn rand(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -396,7 +396,7 @@ pub async fn rand(
 
 #[allow(unused)]
 pub async fn count(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -409,7 +409,7 @@ pub async fn count(
 
 #[allow(unused)]
 pub async fn sum(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -425,7 +425,7 @@ pub async fn sum(
 }
 
 pub async fn slice(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -448,7 +448,7 @@ pub async fn slice(
 }
 
 pub async fn sort(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -477,7 +477,7 @@ pub async fn sort(
 }
 
 pub async fn sort_s(
-    dm: &dyn AsDataManager,
+    dm: &mut dyn AsDataManager,
     output: &Path,
     input: &Path,
     input1: &Path,
@@ -498,7 +498,7 @@ pub async fn sort_s(
 }
 
 pub fn dump<'a1, 'a2, 'a3, 'a4, 'f>(
-    dm: &'a1 dyn AsDataManager,
+    dm: &'a1 mut dyn AsDataManager,
     output: &'a2 Path,
     input: &'a3 Path,
     input1: &'a4 Path,

@@ -1,4 +1,4 @@
-use std::{future, io, pin::Pin, sync::Arc};
+use std::{future, io, pin::Pin};
 
 use crate::util::{
     data::{Auth, MemDataManager},
@@ -7,40 +7,42 @@ use crate::util::{
 
 use super::{AsDataManager, AsStack};
 
-#[derive(Clone)]
 pub struct TempDataManager {
-    pub global: Arc<dyn AsDataManager>,
+    pub global: Box<dyn AsDataManager>,
     pub temp: Vec<MemDataManager>,
 }
 
 impl TempDataManager {
-    pub fn new(global: Arc<dyn AsDataManager>) -> Self {
+    pub fn new(global: Box<dyn AsDataManager>) -> Self {
         Self {
             global,
             temp: vec![MemDataManager::new(None)],
         }
     }
 
-    pub fn while1(
-        &self,
-        path: &Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let this = self.clone();
-        let mut path = path.clone();
+    pub fn while1<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
-            let root_v = this.get(&path).await?;
+            let root_v = self.get(&path).await?;
             let path = Path {
                 root_v,
                 step_v: vec![step],
             };
             loop {
                 if path.is_temp() {
-                    if !this.temp.last().unwrap().get(&path).await?.is_empty() {
+                    if !self.temp.last().unwrap().get(&path).await?.is_empty() {
                         return Ok(());
                     }
                 } else {
-                    if !this.global.get(&path).await?.is_empty() {
+                    if !self.global.get(&path).await?.is_empty() {
                         return Ok(());
                     }
                 }
@@ -49,26 +51,29 @@ impl TempDataManager {
         })
     }
 
-    pub fn while0(
-        &self,
-        path: &Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let this = self.clone();
-        let mut path = path.clone();
+    pub fn while0<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
-            let root_v = this.get(&path).await?;
+            let root_v = self.get(&path).await?;
             let path = Path {
                 root_v,
                 step_v: vec![step],
             };
             loop {
                 if path.is_temp() {
-                    if this.temp.last().unwrap().get(&path).await?.is_empty() {
+                    if self.temp.last().unwrap().get(&path).await?.is_empty() {
                         return Ok(());
                     }
                 } else {
-                    if this.global.get(&path).await?.is_empty() {
+                    if self.global.get(&path).await?.is_empty() {
                         return Ok(());
                     }
                 }
@@ -137,7 +142,7 @@ impl AsDataManager for TempDataManager {
     }
 
     fn append<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -157,7 +162,7 @@ impl AsDataManager for TempDataManager {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
                 self.temp
-                    .last()
+                    .last_mut()
                     .unwrap()
                     .append(
                         &Path {
@@ -185,7 +190,7 @@ impl AsDataManager for TempDataManager {
     }
 
     fn set<'a, 'a1, 'f>(
-        &'a self,
+        &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
@@ -211,7 +216,7 @@ impl AsDataManager for TempDataManager {
                     root_v.len()
                 );
                 self.temp
-                    .last()
+                    .last_mut()
                     .unwrap()
                     .set(
                         &Path {
@@ -282,7 +287,7 @@ impl AsDataManager for TempDataManager {
     }
 
     fn call_and_return<'a, 'a1, 'a2, 'a3, 'f>(
-        &'a self,
+        &'a mut self,
         func: &'a1 str,
         input: &'a2 Path,
         input1: &'a3 Path,
@@ -318,7 +323,7 @@ impl AsDataManager for TempDataManager {
     }
 
     fn call<'a, 'a1, 'a2, 'a3, 'a4, 'f>(
-        &'a self,
+        &'a mut self,
         output: &'a1 Path,
         func: &'a2 str,
         input: &'a3 Path,
