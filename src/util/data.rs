@@ -1,4 +1,4 @@
-use std::{collections::HashSet, future::Future, io, pin::Pin};
+use std::{collections::HashSet, future::{self, Future}, io, pin::Pin};
 
 use crate::util::Path;
 
@@ -91,7 +91,7 @@ pub trait AsDataManager: Send + Sync {
         'a2: 'f,
         'a3: 'f,
     {
-        todo!()
+        Box::pin(future::ready(Err(io::Error::other("error"))))
     }
 
     fn dump<'a, 'b, 'c, 'f>(
