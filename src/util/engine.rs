@@ -20,9 +20,9 @@ mod dep {
 
             let word_v: Vec<&str> = line.split(' ').collect();
             if word_v.len() < 4 {
-                return Err(io::Error::other(
-                    "when parse_script:\n\tless than 4 words in a line",
-                ));
+                return Err(io::Error::other(format!(
+                    "{line}: less than 4 words in a line"
+                )));
             }
             if word_v.len() == 5 {
                 if word_v[1] == "=" {
