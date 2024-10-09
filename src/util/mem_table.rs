@@ -80,7 +80,7 @@ impl MemTable {
         uuid
     }
 
-    pub fn get_target_v(&mut self, source: &str, paper: &str, code: &str) -> Vec<String> {
+    pub fn get_target_v(&self, source: &str, paper: &str, code: &str) -> Vec<String> {
         if let Some(uuid_v) = self
             .inx_source_code
             .get(&(source.to_string(), (paper.to_string(), code.to_string())))
@@ -96,7 +96,7 @@ impl MemTable {
         }
     }
 
-    pub fn get_source_v(&mut self, paper: &str, code: &str, target: &str) -> Vec<String> {
+    pub fn get_source_v(&self, paper: &str, code: &str, target: &str) -> Vec<String> {
         if let Some(uuid_v) = self
             .inx_code_target
             .get(&((paper.to_string(), code.to_string()), target.to_string()))
