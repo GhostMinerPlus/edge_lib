@@ -37,7 +37,7 @@ where
 #[allow(unused)]
 pub async fn distinct<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let mut set: HashSet<String> = HashSet::new();
     let input_item_v = dm.get(input).await?;
@@ -53,7 +53,7 @@ where
 
 pub async fn left<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -72,7 +72,7 @@ where
 
 pub async fn inner<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -83,7 +83,7 @@ where
 
 pub async fn if_<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -97,7 +97,7 @@ where
 
 pub async fn if_0<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -111,7 +111,7 @@ where
 
 pub async fn if_1<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -126,7 +126,7 @@ where
 #[allow(unused)]
 pub async fn set<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     dm.set(output, input_item_v).await
@@ -134,7 +134,7 @@ where
 
 pub async fn add<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -157,7 +157,7 @@ where
 
 pub async fn minus<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -180,7 +180,7 @@ where
 
 pub async fn mul<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -203,7 +203,7 @@ where
 
 pub async fn div<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -226,7 +226,7 @@ where
 
 pub async fn rest<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -249,7 +249,7 @@ where
 
 pub async fn equal<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -263,9 +263,14 @@ where
     dm.set(output, output_item_v).await
 }
 
-pub async fn not_equal<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
+pub async fn not_equal<DM>(
+    dm: &mut DM,
+    output: &Path,
+    input: &Path,
+    input1: &Path,
+) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -281,7 +286,7 @@ where
 
 pub async fn greater<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
@@ -305,7 +310,7 @@ where
 
 pub async fn smaller<DM>(dm: &mut DM, output: &Path, input: &Path, input1: &Path) -> io::Result<()>
 where
-    DM: AsDataManager + Sync + Send + 'static + ?Sized,
+    DM: AsDataManager + Sync + Send + ?Sized,
 {
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;

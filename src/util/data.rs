@@ -8,10 +8,8 @@ use std::{
 use crate::util::Path;
 
 mod mem;
-mod temp;
 
 pub use mem::*;
-pub use temp::*;
 
 pub type Auth = Option<PermissionPair>;
 
@@ -164,14 +162,4 @@ pub trait AsDataManager: Send + Sync {
             Ok(())
         })
     }
-}
-
-pub trait AsStack {
-    fn push<'a, 'f>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>;
-
-    fn pop<'a, 'f>(
-        &'a mut self,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>;
 }

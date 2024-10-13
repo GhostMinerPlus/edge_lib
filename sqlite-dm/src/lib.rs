@@ -147,8 +147,8 @@ impl AsDataManager for SqliteDataManager {
 #[cfg(test)]
 mod tests {
     use edge_lib::util::{
-        data::{AsDataManager, AsStack, TempDataManager},
-        engine::AsEdgeEngine,
+        data::AsDataManager,
+        engine::{AsEdgeEngine, EdgeEngine},
         Path,
     };
     use sqlx::sqlite::SqliteConnectOptions;
@@ -166,13 +166,12 @@ mod tests {
                 sqlx::SqlitePool::connect_with(SqliteConnectOptions::new().filename("test.db"))
                     .await
                     .unwrap();
-            let global = SqliteDataManager::new(pool, None);
+            let mut global = SqliteDataManager::new(pool, None);
             global.init().await;
-            let mut dm = TempDataManager::new(global);
+            let mut dm = EdgeEngine::new(&mut global);
             dm.execute_script(&vec!["root->type = user _".to_string()])
                 .await
                 .unwrap();
-            dm.pop().await.unwrap();
 
             let rs = dm.get(&Path::from_str("root->type")).await.unwrap();
             assert_eq!(rs[0], "user")
