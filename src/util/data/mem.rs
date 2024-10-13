@@ -62,7 +62,6 @@ mod main {
     }
 }
 
-#[derive(Clone)]
 pub struct MemDataManager {
     auth: Auth,
     mem_table: mem_table::MemTable,
@@ -74,10 +73,6 @@ impl MemDataManager {
             auth,
             mem_table: mem_table::MemTable::new(),
         }
-    }
-
-    pub fn new_with_table(auth: Auth, mem_table: mem_table::MemTable) -> Self {
-        Self { auth, mem_table }
     }
 }
 

@@ -1,4 +1,9 @@
-use std::{collections::HashSet, future::{self, Future}, io, pin::Pin};
+use std::{
+    collections::HashSet,
+    future::{self, Future},
+    io,
+    pin::Pin,
+};
 
 use crate::util::Path;
 

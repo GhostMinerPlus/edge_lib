@@ -119,18 +119,6 @@ where
     }
 }
 
-impl<DM> TempDataManager<DM>
-where
-    DM: Clone,
-{
-    pub fn divide(&self) -> Self {
-        Self {
-            global: self.global.clone(),
-            temp: vec![MemDataManager::new(None)],
-        }
-    }
-}
-
 impl<DM> AsStack for TempDataManager<DM> {
     fn push<'a, 'f>(
         &'a mut self,
