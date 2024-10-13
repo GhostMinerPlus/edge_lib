@@ -75,6 +75,10 @@ impl MemDataManager {
             mem_table: mem_table::MemTable::new(),
         }
     }
+
+    pub fn new_with_table(auth: Auth, mem_table: mem_table::MemTable) -> Self {
+        Self { auth, mem_table }
+    }
 }
 
 impl AsDataManager for MemDataManager {
