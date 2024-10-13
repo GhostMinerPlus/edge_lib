@@ -7,13 +7,16 @@ use crate::util::{
 
 use super::{AsDataManager, AsStack};
 
-pub struct TempDataManager {
-    pub global: Box<dyn AsDataManager>,
+pub struct TempDataManager<DM> {
+    pub global: DM,
     pub temp: Vec<MemDataManager>,
 }
 
-impl TempDataManager {
-    pub fn new(global: Box<dyn AsDataManager>) -> Self {
+impl<DM> TempDataManager<DM>
+where
+    DM: AsDataManager + 'static,
+{
+    pub fn new(global: DM) -> Self {
         Self {
             global,
             temp: vec![MemDataManager::new(None)],
@@ -116,7 +119,19 @@ impl TempDataManager {
     }
 }
 
-impl AsStack for TempDataManager {
+impl<DM> TempDataManager<DM>
+where
+    DM: Clone,
+{
+    pub fn divide(&self) -> Self {
+        Self {
+            global: self.global.clone(),
+            temp: vec![MemDataManager::new(None)],
+        }
+    }
+}
+
+impl<DM> AsStack for TempDataManager<DM> {
     fn push<'a, 'f>(
         &'a mut self,
     ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>> {
@@ -136,7 +151,10 @@ impl AsStack for TempDataManager {
     }
 }
 
-impl AsDataManager for TempDataManager {
+impl<DM> AsDataManager for TempDataManager<DM>
+where
+    DM: AsDataManager + 'static,
+{
     fn get_auth(&self) -> &Auth {
         self.global.get_auth()
     }

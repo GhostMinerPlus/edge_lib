@@ -168,7 +168,7 @@ mod tests {
                     .unwrap();
             let global = SqliteDataManager::new(pool, None);
             global.init().await;
-            let mut dm = TempDataManager::new(Box::new(global));
+            let mut dm = TempDataManager::new(global);
             dm.execute_script(&vec!["root->type = user _".to_string()])
                 .await
                 .unwrap();

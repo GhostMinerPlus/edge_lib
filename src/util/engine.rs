@@ -179,7 +179,7 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let dm = Box::new(MemDataManager::new(None));
+            let dm = MemDataManager::new(None);
             let mut engine = TempDataManager::new(dm);
             engine
                 .execute_script(&vec![
@@ -205,7 +205,7 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             // dm
-            let dm = Box::new(MemDataManager::new(None));
+            let dm = MemDataManager::new(None);
 
             // engine
             let mut engine = TempDataManager::new(dm);
@@ -243,7 +243,7 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             // dm
-            let dm = Box::new(MemDataManager::new(None));
+            let dm = MemDataManager::new(None);
 
             // engine
             let mut engine = TempDataManager::new(dm);
