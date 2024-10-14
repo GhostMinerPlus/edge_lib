@@ -1,7 +1,3 @@
-use std::{future::Future, io, pin::Pin};
-
-use data::AsDataManager;
-
 mod main {
     use crate::util;
 
@@ -202,6 +198,10 @@ pub mod data;
 pub mod engine;
 pub mod mem_table;
 
+use std::{future::Future, io, pin::Pin};
+
+use data::AsDataManager;
+
 pub fn escape_word(mut word: &str) -> String {
     if word.starts_with('\'') && word.ends_with('\'') {
         word = &word[1..word.len() - 1];
@@ -316,13 +316,29 @@ pub fn unescape_word(word: &str) -> String {
 
 pub fn rs_2_str(rs: &[String]) -> String {
     let mut acc = String::new();
-    for item in rs {
+
+    if rs.is_empty() {
+        return acc;
+    }
+
+    for i in 0..rs.len() - 1 {
+        let item = &rs[i];
+
         acc = if item.ends_with("\\c") {
             format!("{acc}{}", &item[0..item.len() - 2])
         } else {
-            format!("{acc}\n{item}")
+            format!("{acc}{item}\n")
         }
     }
+
+    let item = rs.last().unwrap();
+
+    acc = if item.ends_with("\\c") {
+        format!("{acc}{}", &item[0..item.len() - 2])
+    } else {
+        format!("{acc}{item}")
+    };
+
     acc
 }
 
