@@ -115,10 +115,9 @@ where
             if inc_v.is_empty() {
                 return Ok(vec![]);
             }
-            log::debug!("inc_v.len(): {}", inc_v.len());
+
             for inc in &mut inc_v {
                 dep::unwrap_inc(inc);
-                log::debug!("invoke_inc: {:?}", inc);
                 let func_name_v = self.get(&inc.function).await?;
                 if func_name_v.is_empty() {
                     return Err(io::Error::other(format!(
@@ -126,6 +125,7 @@ where
                         inc.function.to_string()
                     )));
                 }
+
                 if let Err(_) = self
                     .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
                     .await
@@ -133,23 +133,23 @@ where
                     let input_item_v = self.get(&inc.input).await?;
                     let input1_item_v = self.get(&inc.input1).await?;
 
-                    let mut sub_engine = EdgeEngine::new(self.get_global_mut());
+                    let rs = {
+                        let mut sub_engine = EdgeEngine::new(self.get_global_mut());
 
-                    let _ = sub_engine
-                        .set(&Path::from_str("$->$:input"), input_item_v)
-                        .await;
-                    let _ = sub_engine
-                        .set(&Path::from_str("$->$:input1"), input1_item_v)
-                        .await;
+                        let _ = sub_engine
+                            .set(&Path::from_str("$->$:input"), input_item_v)
+                            .await;
+                        let _ = sub_engine
+                            .set(&Path::from_str("$->$:input1"), input1_item_v)
+                            .await;
+                        sub_engine.execute_script(&func_name_v).await?
+                    };
 
-                    let rs = sub_engine.execute_script(&func_name_v).await;
-
-                    drop(sub_engine);
-
-                    self.set(&inc.output, rs?).await?;
+                    self.set(&inc.output, rs).await?;
                 }
             }
-            self.get(&Path::from_str(&format!("$->$:output"))).await
+
+            self.get(&Path::from_str("$->$:output")).await
         })
     }
 }
@@ -355,20 +355,18 @@ where
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
+
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
         }
-        let mut path = path.clone();
+
         Box::pin(async move {
+            let mut path = path.clone();
+
             if path.is_temp() {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
-                log::debug!(
-                    "set {}->{}: {}\nwhen UnitedDataManager::set",
-                    path.to_string(),
-                    step.code,
-                    root_v.len()
-                );
+
                 self.temp
                     .set(
                         &Path {
@@ -381,12 +379,7 @@ where
             } else {
                 let step = path.step_v.pop().unwrap();
                 let root_v = self.get(&path).await?;
-                log::debug!(
-                    "set {}->{}: {}\nwhen UnitedDataManager::set",
-                    path.to_string(),
-                    step.code,
-                    root_v.len()
-                );
+
                 self.global
                     .set(
                         &Path {

@@ -36,7 +36,6 @@ impl MemTable {
     }
 
     pub fn insert_edge(&mut self, source: &str, paper: &str, code: &str, target: &str) -> u64 {
-        log::debug!("insert edge: {source}->{code}->{target}");
         let uuid = next_id(&mut self.id);
         let edge = Edge {
             source: source.to_string(),
