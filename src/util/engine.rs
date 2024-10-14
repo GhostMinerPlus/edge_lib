@@ -257,12 +257,12 @@ where
 
     /// # Convert temp path to gloabl path.
     #[async_recursion::async_recursion]
-    pub async fn temp_2_gloabl(&self, path: &Path) -> io::Result<Path> {
+    pub async fn temp_2_global(&self, path: &Path) -> io::Result<Path> {
         match path.first_part() {
             PathPart::Pure(part_path) => {
                 let item_v = self.global.get(&part_path).await?;
 
-                self.temp_2_gloabl(&Path {
+                self.temp_2_global(&Path {
                     root_v: item_v,
                     step_v: path.step_v[part_path.step_v.len()..].to_vec(),
                 })
@@ -271,7 +271,7 @@ where
             PathPart::Temp(part_path) => {
                 let item_v = self.temp.get(&part_path).await?;
 
-                self.temp_2_gloabl(&Path {
+                self.temp_2_global(&Path {
                     root_v: item_v,
                     step_v: path.step_v[part_path.step_v.len()..].to_vec(),
                 })
@@ -414,7 +414,7 @@ where
         }
         let path = path.clone();
         Box::pin(async move {
-            let gloabl_path = self.temp_2_gloabl(&path).await?;
+            let gloabl_path = self.temp_2_global(&path).await?;
             self.global.get(&gloabl_path).await
         })
     }
@@ -465,8 +465,8 @@ where
                     self.global
                         .call_and_return(
                             func,
-                            &self.temp_2_gloabl(input).await?,
-                            &self.temp_2_gloabl(input1).await?,
+                            &self.temp_2_global(input).await?,
+                            &self.temp_2_global(input1).await?,
                         )
                         .await
                 }
@@ -490,11 +490,11 @@ where
         Self: Sized,
     {
         Box::pin(async move {
-            let input = self.temp_2_gloabl(input).await?;
-            let input1 = self.temp_2_gloabl(input1).await?;
+            let input = self.temp_2_global(input).await?;
+            let input1 = self.temp_2_global(input1).await?;
 
             if !output.is_temp() {
-                let g_output = self.temp_2_gloabl(output).await?;
+                let g_output = self.temp_2_global(output).await?;
 
                 if let Ok(()) = self.global.call(&g_output, func, &input, &input1).await {
                     return Ok(());
