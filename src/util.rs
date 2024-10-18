@@ -144,12 +144,15 @@ mod main {
 
     fn find_quotation(path: &str) -> Option<usize> {
         let pos = path.find('\'')?;
+
         if pos == 0 {
             return Some(0);
         }
-        if &path[pos - 1..pos] == "\\" {
+
+        if path[0..pos].ends_with("\\'") {
             return Some(pos + 1 + find_quotation(&path[pos + 1..])?);
         }
+
         Some(pos)
     }
 
@@ -202,6 +205,46 @@ use std::{future::Future, io, pin::Pin};
 
 use data::AsDataManager;
 
+pub(crate) fn dump<'a1, 'a2, 'a3, 'f, DM>(
+    dm: &'a1 DM,
+    root: &'a2 str,
+    space: &'a3 str,
+) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
+where
+    'a1: 'f,
+    'a2: 'f,
+    'a3: 'f,
+    DM: AsDataManager + ?Sized,
+{
+    Box::pin(async move {
+        let code_v = dm.get_code_v(root, space).await?;
+
+        if code_v.is_empty() {
+            return Ok(json::JsonValue::String(root.to_string()));
+        }
+
+        let mut rj = json::object! {};
+
+        for code in &code_v {
+            let mut rj_item_v = json::array![];
+
+            let paper_code = format!("{space}:{code}");
+
+            let sub_root_v = dm
+                .get(&Path::from_str(&format!("{root}->{paper_code}")))
+                .await?;
+
+            for sub_root in &sub_root_v {
+                rj_item_v.push(dump(dm, sub_root, space).await?).unwrap();
+            }
+
+            rj.insert(&paper_code, rj_item_v).unwrap();
+        }
+
+        Ok(rj)
+    })
+}
+
 pub fn escape_word(mut word: &str) -> String {
     if word.starts_with('\'') && word.ends_with('\'') {
         word = &word[1..word.len() - 1];
@@ -229,17 +272,6 @@ pub fn escape_word(mut word: &str) -> String {
         };
     }
     rs
-}
-
-#[cfg(test)]
-mod test_escape_word {
-    use super::escape_word;
-
-    #[test]
-    fn test() {
-        let rs = escape_word("\\wo\\nrd");
-        assert_eq!(rs, "wo\nrd");
-    }
 }
 
 pub enum PathType {
@@ -370,57 +402,25 @@ pub fn str_2_rs(s: &str) -> Vec<String> {
     rs
 }
 
-pub(crate) fn dump<'a1, 'a2, 'a3, 'f, DM>(
-    dm: &'a1 DM,
-    root: &'a2 str,
-    space: &'a3 str,
-) -> Pin<Box<impl Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
-where
-    'a1: 'f,
-    'a2: 'f,
-    'a3: 'f,
-    DM: AsDataManager + ?Sized,
-{
-    Box::pin(async move {
-        let code_v = dm.get_code_v(root, space).await?;
-
-        if code_v.is_empty() {
-            return Ok(json::JsonValue::String(root.to_string()));
-        }
-
-        let mut rj = json::object! {};
-
-        for code in &code_v {
-            let mut rj_item_v = json::array![];
-
-            let paper_code = format!("{space}:{code}");
-
-            let sub_root_v = dm
-                .get(&Path::from_str(&format!("{root}->{paper_code}")))
-                .await?;
-
-            for sub_root in &sub_root_v {
-                rj_item_v.push(dump(dm, sub_root, space).await?).unwrap();
-            }
-
-            rj.insert(&paper_code, rj_item_v).unwrap();
-        }
-
-        Ok(rj)
-    })
-}
-
 pub fn gen_value() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::util::escape_word;
+
     use super::Path;
 
     #[test]
     fn test_root_v() {
         let path = Path::from_str("'$->$:output\\s+\\s1\\s1','$->$:output\\s+=\\s$->$:output\\s1'");
         assert_eq!(path.root_v.len(), 2)
+    }
+
+    #[test]
+    fn test_escape_word() {
+        let rs = escape_word("\\wo\\nrd");
+        assert_eq!(rs, "wo\nrd");
     }
 }
