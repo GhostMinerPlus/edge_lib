@@ -1,9 +1,12 @@
 use sqlx::{Pool, Sqlite};
-use std::{future, io, pin::Pin};
+use std::{future, pin::Pin};
 
-use edge_lib::util::{
-    data::{AsDataManager, Auth},
-    Path,
+use edge_lib::{
+    err,
+    util::{
+        data::{AsDataManager, Auth},
+        Path,
+    },
 };
 
 mod dao;
@@ -43,7 +46,7 @@ impl AsDataManager for SqliteDataManager {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -56,7 +59,10 @@ impl AsDataManager for SqliteDataManager {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
-                    return Err(io::Error::other("permision denied"));
+                    return Err(err::Error::new(
+                        err::ErrorKind::PermissionDenied,
+                        format!("{}", step.paper),
+                    ));
                 }
             }
             let root_v = self.get(&path).await?;
@@ -72,7 +78,7 @@ impl AsDataManager for SqliteDataManager {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -85,7 +91,10 @@ impl AsDataManager for SqliteDataManager {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
-                    return Err(io::Error::other("permision denied"));
+                    return Err(err::Error::new(
+                        err::ErrorKind::PermissionDenied,
+                        format!("{}", step.paper),
+                    ));
                 }
             }
             let root_v = self.get(&path).await?;
@@ -109,7 +118,7 @@ impl AsDataManager for SqliteDataManager {
     fn get<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -122,7 +131,10 @@ impl AsDataManager for SqliteDataManager {
             if let Some(auth) = &self.auth {
                 for step in &path.step_v {
                     if !auth.writer.contains(&step.paper) && !auth.reader.contains(&step.paper) {
-                        return Err(io::Error::other("permision denied"));
+                        return Err(err::Error::new(
+                            err::ErrorKind::PermissionDenied,
+                            format!("{}", step.paper),
+                        ));
                     }
                 }
             }
@@ -134,7 +146,7 @@ impl AsDataManager for SqliteDataManager {
         &'a self,
         root: &'a1 str,
         space: &'a2 str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,

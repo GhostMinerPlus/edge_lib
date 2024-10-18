@@ -1,11 +1,10 @@
 use std::{
     collections::HashSet,
     future::{self, Future},
-    io,
     pin::Pin,
 };
 
-use crate::util::Path;
+use crate::{err, util::Path};
 
 mod mem;
 
@@ -27,7 +26,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -37,7 +36,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -46,7 +45,7 @@ pub trait AsDataManager: Send + Sync {
     fn get<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -55,7 +54,7 @@ pub trait AsDataManager: Send + Sync {
         &'a self,
         root: &'a1 str,
         space: &'a2 str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -67,7 +66,7 @@ pub trait AsDataManager: Send + Sync {
         func: &'a2 str,
         input: &'a3 Path,
         input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -87,21 +86,24 @@ pub trait AsDataManager: Send + Sync {
         func: &'a1 str,
         input: &'a2 Path,
         input1: &'a3 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
         'a2: 'f,
         'a3: 'f,
     {
-        Box::pin(future::ready(Err(io::Error::other("error"))))
+        Box::pin(future::ready(Err(err::Error::new(
+            err::ErrorKind::NotFound,
+            format!("function '{func}' is not found!"),
+        ))))
     }
 
     fn dump<'a, 'b, 'c, 'f>(
         &'a mut self,
         addr: &'b Path,
         paper: &'c str,
-    ) -> Pin<Box<dyn Future<Output = io::Result<json::JsonValue>> + Send + 'f>>
+    ) -> Pin<Box<dyn Future<Output = err::Result<json::JsonValue>> + Send + 'f>>
     where
         'a: 'f,
         'b: 'f,
@@ -123,7 +125,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         data: &'a1 json::JsonValue,
         addr: &'a2 Path,
-    ) -> Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,

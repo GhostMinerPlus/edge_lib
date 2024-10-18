@@ -1,12 +1,8 @@
-use std::io::{self, Error, ErrorKind};
-
-use edge_lib::util::Path;
+use edge_lib::{err, util::Path};
 use sqlx::{Pool, Row, Sqlite};
 
 mod main {
-    use std::io;
-
-    use edge_lib::util::Step;
+    use edge_lib::{err, util::Step};
     use sqlx::{Pool, Sqlite};
 
     pub async fn delete_edge_with_source_code(
@@ -14,14 +10,14 @@ mod main {
         source: &str,
         paper: &str,
         code: &str,
-    ) -> io::Result<()> {
+    ) -> err::Result<()> {
         sqlx::query("delete from edge_t where source = ? and paper = ? and code = ?")
             .bind(source)
             .bind(paper)
             .bind(code)
             .execute(&pool)
             .await
-            .map_err(|e| io::Error::other(e))?;
+            .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
         Ok(())
     }
 
@@ -87,7 +83,7 @@ pub async fn insert_edge(
     paper: &str,
     code: &str,
     target_v: &Vec<String>,
-) -> io::Result<()> {
+) -> err::Result<()> {
     if target_v.is_empty() {
         return Ok(());
     }
@@ -112,11 +108,11 @@ pub async fn insert_edge(
     statement
         .execute(&pool)
         .await
-        .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
     Ok(())
 }
 
-pub async fn get(pool: Pool<Sqlite>, path: &Path) -> io::Result<Vec<String>> {
+pub async fn get(pool: Pool<Sqlite>, path: &Path) -> err::Result<Vec<String>> {
     let first_step = &path.step_v[0];
     let sql = main::gen_sql_stm(first_step, &path.step_v[1..]);
     let mut arr = Vec::new();
@@ -129,7 +125,7 @@ pub async fn get(pool: Pool<Sqlite>, path: &Path) -> io::Result<Vec<String>> {
         let rs = stm
             .fetch_all(&pool)
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
         for row in rs {
             arr.push(row.get(0));
         }
@@ -143,18 +139,18 @@ pub async fn delete_edge_with_source_code(
     paper: &str,
     source: &str,
     code: &str,
-) -> io::Result<()> {
+) -> err::Result<()> {
     main::delete_edge_with_source_code(pool, source, paper, code).await
 }
 
-pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> io::Result<Vec<String>> {
+pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> err::Result<Vec<String>> {
     Ok(
         sqlx::query("select code from edge_t where source = ? and paper = ?")
             .bind(root)
             .bind(paper)
             .fetch_all(&pool)
             .await
-            .map_err(|e| Error::new(ErrorKind::Other, e))?
+            .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?
             .iter()
             .map(|row| row.get(0))
             .collect(),

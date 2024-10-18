@@ -1,22 +1,38 @@
-use std::fmt::Display;
+#[derive(Debug)]
+pub struct Error {
+    kind: ErrorKind,
+    message: String,
+    stack_v: Vec<String>,
+}
 
 #[derive(Debug)]
-pub enum Error {
-    Other(String),
-    Question(String),
+pub enum ErrorKind {
+    Other,
+    NotFound,
+    PermissionDenied,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Other(msg) => write!(f, "{msg}"),
-            Error::Question(msg) => write!(f, "{msg}"),
+impl Error {
+    pub fn new(kind: ErrorKind, message: String) -> Self {
+        Self {
+            kind,
+            message,
+            stack_v: vec![],
         }
     }
-}
 
-pub fn map_io_err(err: std::io::Error) -> Error {
-    Error::Other(err.to_string())
+    pub fn append_stack(mut self, stack: String) -> Self {
+        self.stack_v.push(stack);
+        self
+    }
+
+    pub fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }

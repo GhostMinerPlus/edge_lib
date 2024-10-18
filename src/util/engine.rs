@@ -1,6 +1,6 @@
-use std::{future, io, pin::Pin};
+use std::{future, pin::Pin};
 
-use crate::util::Path;
+use crate::{err, util::Path};
 
 use super::{
     data::{AsDataManager, MemDataManager},
@@ -8,11 +8,12 @@ use super::{
 };
 
 mod dep {
-    use std::io;
+    use crate::{
+        err,
+        util::{self, engine::Inc, Path},
+    };
 
-    use crate::util::{self, engine::Inc, Path};
-
-    pub fn parse_script1(script: &[String]) -> io::Result<Vec<Inc>> {
+    pub fn parse_script1(script: &[String]) -> err::Result<Vec<Inc>> {
         let mut inc_v = Vec::new();
         for line in script {
             if line.is_empty() {
@@ -21,7 +22,8 @@ mod dep {
 
             let word_v: Vec<&str> = line.split(' ').collect();
             if word_v.len() < 4 {
-                return Err(io::Error::other(format!(
+                return Err(err::Error::new(
+                    err::ErrorKind::Other, format!(
                     "{line}: less than 4 words in a line"
                 )));
             }
@@ -47,7 +49,10 @@ mod dep {
                         input1: Path::from_str("$->$:temp"),
                     });
                 } else {
-                    return Err(io::Error::other("when parse_script:\n\tunknown operator"));
+                    return Err(err::Error::new(
+                        err::ErrorKind::Other,format!(
+                        "when parse_script:\n\tunknown operator"
+                    )));
                 }
                 continue;
             }
@@ -83,7 +88,7 @@ pub trait AsEdgeEngine {
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 [String],
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -105,7 +110,7 @@ where
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 [String],
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -120,7 +125,8 @@ where
                 dep::unwrap_inc(inc);
                 let func_name_v = self.get(&inc.function).await?;
                 if func_name_v.is_empty() {
-                    return Err(io::Error::other(format!(
+                    return Err(err::Error::new(
+                        err::ErrorKind::Other,format!(
                         "no funtion: {}\nat invoke_inc",
                         inc.function.to_string()
                     )));
@@ -130,24 +136,26 @@ where
                     .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
                     .await
                 {
-                    log::debug!("{e}\nat call");
+                    if let err::ErrorKind::NotFound = e.kind() {
+                        let input_item_v = self.get(&inc.input).await?;
+                        let input1_item_v = self.get(&inc.input1).await?;
 
-                    let input_item_v = self.get(&inc.input).await?;
-                    let input1_item_v = self.get(&inc.input1).await?;
+                        let rs = {
+                            let mut sub_engine = EdgeEngine::new(self.get_global_mut());
 
-                    let rs = {
-                        let mut sub_engine = EdgeEngine::new(self.get_global_mut());
+                            let _ = sub_engine
+                                .set(&Path::from_str("$->$:input"), input_item_v)
+                                .await;
+                            let _ = sub_engine
+                                .set(&Path::from_str("$->$:input1"), input1_item_v)
+                                .await;
+                            sub_engine.execute_script(&func_name_v).await?
+                        };
 
-                        let _ = sub_engine
-                            .set(&Path::from_str("$->$:input"), input_item_v)
-                            .await;
-                        let _ = sub_engine
-                            .set(&Path::from_str("$->$:input1"), input1_item_v)
-                            .await;
-                        sub_engine.execute_script(&func_name_v).await?
-                    };
-
-                    self.set(&inc.output, rs).await?;
+                        self.set(&inc.output, rs).await?;
+                    } else {
+                        return Err(e);
+                    }
                 }
             }
 
@@ -198,7 +206,7 @@ where
     pub fn while1<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -229,7 +237,7 @@ where
     pub fn while0<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -259,7 +267,7 @@ where
 
     /// # Convert temp path to gloabl path.
     #[async_recursion::async_recursion]
-    pub async fn temp_2_global(&self, path: &Path) -> io::Result<Path> {
+    pub async fn temp_2_global(&self, path: &Path) -> err::Result<Path> {
         match path.first_part() {
             PathPart::Pure(part_path) => {
                 let item_v = self.global.get(&part_path).await?;
@@ -303,7 +311,7 @@ where
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -312,7 +320,10 @@ where
             return Box::pin(future::ready(Ok(())));
         }
         if path.step_v.last().unwrap().arrow != "->" {
-            return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
+            return Box::pin(future::ready(Err(err::Error::new(
+                err::ErrorKind::Other, format!(
+                "can not set parents"
+            )))));
         }
         let mut path = path.clone();
         Box::pin(async move {
@@ -349,7 +360,7 @@ where
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -359,7 +370,10 @@ where
         }
 
         if path.step_v.last().unwrap().arrow != "->" {
-            return Box::pin(future::ready(Err(io::Error::other("can not set parents"))));
+            return Box::pin(future::ready(Err(err::Error::new(
+                err::ErrorKind::Other, format!(
+                "can not set parents"
+            )))));
         }
 
         Box::pin(async move {
@@ -399,7 +413,7 @@ where
     fn get<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -418,7 +432,7 @@ where
         &'a self,
         root: &'a1 str,
         space: &'a2 str,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -438,7 +452,7 @@ where
         func: &'a1 str,
         input: &'a2 Path,
         input1: &'a3 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -475,7 +489,7 @@ where
         func: &'a2 str,
         input: &'a3 Path,
         input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
     where
         'a: 'f,
         'a1: 'f,
