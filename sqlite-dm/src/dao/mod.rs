@@ -1,13 +1,13 @@
 use std::io::{self, Error, ErrorKind};
 
 use edge_lib::util::Path;
-use sqlx::{Sqlite, Pool, Row};
+use sqlx::{Pool, Row, Sqlite};
 
 mod main {
     use std::io;
 
     use edge_lib::util::Step;
-    use sqlx::{Sqlite, Pool};
+    use sqlx::{Pool, Sqlite};
 
     pub async fn delete_edge_with_source_code(
         pool: Pool<Sqlite>,
@@ -119,18 +119,22 @@ pub async fn insert_edge(
 pub async fn get(pool: Pool<Sqlite>, path: &Path) -> io::Result<Vec<String>> {
     let first_step = &path.step_v[0];
     let sql = main::gen_sql_stm(first_step, &path.step_v[1..]);
-    let mut stm = sqlx::query(&sql).bind(path.root_op.as_ref().unwrap());
-    for step in &path.step_v {
-        stm = stm.bind(&step.paper).bind(&step.code);
-    }
-    let rs = stm
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
     let mut arr = Vec::new();
-    for row in rs {
-        arr.push(row.get(0));
+
+    for root in &path.root_v {
+        let mut stm = sqlx::query(&sql).bind(root);
+        for step in &path.step_v {
+            stm = stm.bind(&step.paper).bind(&step.code);
+        }
+        let rs = stm
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        for row in rs {
+            arr.push(row.get(0));
+        }
     }
+
     Ok(arr)
 }
 
@@ -143,19 +147,16 @@ pub async fn delete_edge_with_source_code(
     main::delete_edge_with_source_code(pool, source, paper, code).await
 }
 
-pub async fn clear(pool: Pool<Sqlite>) -> io::Result<()> {
-    sqlx::query("delete from edge_t where 1 = 1")
-        .execute(&pool)
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    Ok(())
-}
-
-pub async fn clear_paper(pool: Pool<Sqlite>, paper: &str) -> io::Result<()> {
-    sqlx::query("delete from edge_t where paper = ?")
-        .bind(paper)
-        .execute(&pool)
-        .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    Ok(())
+pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> io::Result<Vec<String>> {
+    Ok(
+        sqlx::query("select code from edge_t where source = ? and paper = ?")
+            .bind(root)
+            .bind(paper)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| Error::new(ErrorKind::Other, e))?
+            .iter()
+            .map(|row| row.get(0))
+            .collect(),
+    )
 }

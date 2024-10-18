@@ -1,9 +1,9 @@
 use sqlx::{Pool, Sqlite};
-use std::{future, io, pin::Pin, sync::Arc};
+use std::{future, io, pin::Pin};
 
-use edge_lib::{
+use edge_lib::util::{
     data::{AsDataManager, Auth},
-    util::Path,
+    Path,
 };
 
 mod dao;
@@ -39,60 +39,59 @@ impl AsDataManager for SqliteDataManager {
         &self.auth
     }
 
-    fn divide(&self, auth: Auth) -> Arc<dyn AsDataManager> {
-        Arc::new(Self {
-            auth,
-            pool: self.pool.clone(),
-        })
-    }
-
-    fn append(
-        &self,
-        path: &Path,
+    fn append<'a, 'a1, 'f>(
+        &'a mut self,
+        path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let this = self.clone();
-        let mut path = path.clone();
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
-            if let Some(auth) = &this.auth {
+            if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
-            let root_v = this.get(&path).await?;
+            let root_v = self.get(&path).await?;
             for source in &root_v {
-                dao::insert_edge(this.pool.clone(), source, &step.paper, &step.code, &item_v)
+                dao::insert_edge(self.pool.clone(), source, &step.paper, &step.code, &item_v)
                     .await?;
             }
             Ok(())
         })
     }
 
-    fn set(
-        &self,
-        path: &Path,
+    fn set<'a, 'a1, 'f>(
+        &'a mut self,
+        path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         if path.step_v.is_empty() {
             return Box::pin(future::ready(Ok(())));
         }
-        let this = self.clone();
-        let mut path = path.clone();
         Box::pin(async move {
+            let mut path = path.clone();
             let step = path.step_v.pop().unwrap();
-            if let Some(auth) = &this.auth {
+            if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
                     return Err(io::Error::other("permision denied"));
                 }
             }
-            let root_v = this.get(&path).await?;
+            let root_v = self.get(&path).await?;
             for source in &root_v {
                 dao::delete_edge_with_source_code(
-                    this.pool.clone(),
+                    self.pool.clone(),
                     &step.paper,
                     source,
                     &step.code,
@@ -100,60 +99,61 @@ impl AsDataManager for SqliteDataManager {
                 .await?;
             }
             for source in &root_v {
-                dao::insert_edge(this.pool.clone(), source, &step.paper, &step.code, &item_v)
+                dao::insert_edge(self.pool.clone(), source, &step.paper, &step.code, &item_v)
                     .await?;
             }
             Ok(())
         })
     }
 
-    fn get(
-        &self,
-        path: &Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send>> {
+    fn get<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
         if path.step_v.is_empty() {
-            if let Some(root) = &path.root_op {
-                return Box::pin(future::ready(Ok(vec![root.clone()])));
-            } else {
-                return Box::pin(future::ready(Ok(vec![])));
-            }
+            return Box::pin(future::ready(Ok(path.root_v.clone())));
         }
-        let this = self.clone();
         let path = path.clone();
         Box::pin(async move {
-            if let Some(auth) = &this.auth {
+            if let Some(auth) = &self.auth {
                 for step in &path.step_v {
                     if !auth.writer.contains(&step.paper) && !auth.reader.contains(&step.paper) {
                         return Err(io::Error::other("permision denied"));
                     }
                 }
             }
-            dao::get(this.pool.clone(), &path).await
+            dao::get(self.pool.clone(), &path).await
         })
     }
 
-    fn clear(&self) -> Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send>> {
-        let this = self.clone();
-        Box::pin(async move {
-            match &this.auth {
-                Some(auth) => {
-                    for paper in &auth.writer {
-                        let _ = dao::clear_paper(this.pool.clone(), paper).await;
-                    }
-                    Ok(())
-                }
-                None => dao::clear(this.pool).await,
-            }
-        })
+    fn get_code_v<'a, 'a1, 'a2, 'f>(
+        &'a self,
+        root: &'a1 str,
+        space: &'a2 str,
+    ) -> Pin<Box<dyn std::future::Future<Output = io::Result<Vec<String>>> + Send + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+        'a2: 'f,
+    {
+        Box::pin(async move { dao::get_code_v(self.pool.clone(), root, space).await })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use edge_lib::engine::{EdgeEngine, ScriptTree1};
+    use edge_lib::util::{
+        data::AsDataManager,
+        engine::{AsEdgeEngine, EdgeEngine},
+        Path,
+    };
     use sqlx::sqlite::SqliteConnectOptions;
 
-    use super::*;
+    use crate::SqliteDataManager;
 
     #[test]
     fn test_root_type() {
@@ -166,24 +166,14 @@ mod tests {
                 sqlx::SqlitePool::connect_with(SqliteConnectOptions::new().filename("test.db"))
                     .await
                     .unwrap();
-            let dm = Arc::new(SqliteDataManager::new(pool, None));
-            dm.init().await;
-            let mut engine = EdgeEngine::new(dm, "root").await;
-            engine
-                .execute2(&ScriptTree1 {
-                    script: vec!["root->type = user _".to_string()],
-                    name: "rs".to_string(),
-                    next_v: vec![],
-                })
+            let mut global = SqliteDataManager::new(pool, None);
+            global.init().await;
+            let mut dm = EdgeEngine::new(&mut global);
+            dm.execute_script(&vec!["root->type = user _".to_string()])
                 .await
                 .unwrap();
-            engine.reset().await.unwrap();
 
-            let rs = engine
-                .get_gloabl()
-                .get(&Path::from_str("root->type"))
-                .await
-                .unwrap();
+            let rs = dm.get(&Path::from_str("root->type")).await.unwrap();
             assert_eq!(rs[0], "user")
         })
     }

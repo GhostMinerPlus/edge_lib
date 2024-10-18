@@ -36,7 +36,6 @@ impl MemTable {
     }
 
     pub fn insert_edge(&mut self, source: &str, paper: &str, code: &str, target: &str) -> u64 {
-        log::debug!("insert edge: {source}->{code}->{target}");
         let uuid = next_id(&mut self.id);
         let edge = Edge {
             source: source.to_string(),
@@ -80,7 +79,7 @@ impl MemTable {
         uuid
     }
 
-    pub fn get_target_v(&mut self, source: &str, paper: &str, code: &str) -> Vec<String> {
+    pub fn get_target_v(&self, source: &str, paper: &str, code: &str) -> Vec<String> {
         if let Some(uuid_v) = self
             .inx_source_code
             .get(&(source.to_string(), (paper.to_string(), code.to_string())))
@@ -96,7 +95,7 @@ impl MemTable {
         }
     }
 
-    pub fn get_source_v(&mut self, paper: &str, code: &str, target: &str) -> Vec<String> {
+    pub fn get_source_v(&self, paper: &str, code: &str, target: &str) -> Vec<String> {
         if let Some(uuid_v) = self
             .inx_code_target
             .get(&((paper.to_string(), code.to_string()), target.to_string()))
@@ -152,5 +151,22 @@ impl MemTable {
         self.inx_source_code.clear();
         self.inx_code_target.clear();
         self.inx_paper.clear();
+    }
+
+    pub fn get_code_v(&self, root: &str, space: &str) -> Vec<String> {
+        if let Some(id_v) = self.inx_paper.get(space) {
+            return id_v
+                .iter()
+                .filter(|id| {
+                    let edge = &self.edge_mp[id];
+                    edge.source == root
+                })
+                .map(|id| {
+                    let edge = &self.edge_mp[id];
+                    edge.code.clone()
+                })
+                .collect();
+        }
+        Vec::new()
     }
 }
