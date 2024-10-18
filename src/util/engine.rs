@@ -565,7 +565,9 @@ mod tests {
             .unwrap();
         rt.block_on(async {
             let mut dm = MemDataManager::new(None);
+
             let mut engine = EdgeEngine::new(&mut dm);
+
             engine
                 .execute_script(&vec![
                     "$->$:temp append $->$:temp '$->$:output\\s+\\s1\\s1'".to_string(),
@@ -573,11 +575,36 @@ mod tests {
                 ])
                 .await
                 .unwrap();
+
             let rs = engine
                 .get(&Path::from_str("test->test:test"))
                 .await
                 .unwrap();
+
             assert_eq!(rs.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_string() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut dm = MemDataManager::new(None);
+
+            let mut engine = EdgeEngine::new(&mut dm);
+
+            let rs = engine
+                .execute_script(&vec![
+                    "$->$:output append $->$:temp 'running\\s=>\\s智\\s明'".to_string(),
+                ])
+                .await
+                .unwrap();
+
+            assert_eq!(rs.len(), 1);
+            assert_eq!(rs[0], "running => 智 明");
         });
     }
 
