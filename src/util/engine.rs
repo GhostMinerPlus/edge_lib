@@ -126,10 +126,12 @@ where
                     )));
                 }
 
-                if let Err(_) = self
+                if let Err(e) = self
                     .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
                     .await
                 {
+                    log::debug!("{e}\nat call");
+
                     let input_item_v = self.get(&inc.input).await?;
                     let input1_item_v = self.get(&inc.input1).await?;
 
