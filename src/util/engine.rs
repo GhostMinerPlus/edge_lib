@@ -23,9 +23,9 @@ mod dep {
             let word_v: Vec<&str> = line.split(' ').collect();
             if word_v.len() < 4 {
                 return Err(err::Error::new(
-                    err::ErrorKind::Other, format!(
-                    "{line}: less than 4 words in a line"
-                )));
+                    err::ErrorKind::Other,
+                    format!("{line}: less than 4 words in a line"),
+                ));
             }
             if word_v.len() == 5 {
                 if word_v[1] == "=" {
@@ -50,9 +50,9 @@ mod dep {
                     });
                 } else {
                     return Err(err::Error::new(
-                        err::ErrorKind::Other,format!(
-                        "when parse_script:\n\tunknown operator"
-                    )));
+                        err::ErrorKind::Other,
+                        format!("when parse_script:\n\tunknown operator"),
+                    ));
                 }
                 continue;
             }
@@ -126,10 +126,9 @@ where
                 let func_name_v = self.get(&inc.function).await?;
                 if func_name_v.is_empty() {
                     return Err(err::Error::new(
-                        err::ErrorKind::Other,format!(
-                        "no funtion: {}\nat invoke_inc",
-                        inc.function.to_string()
-                    )));
+                        err::ErrorKind::Other,
+                        format!("no funtion: {}\nat invoke_inc", inc.function.to_string()),
+                    ));
                 }
 
                 if let Err(e) = self
@@ -321,9 +320,9 @@ where
         }
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(err::Error::new(
-                err::ErrorKind::Other, format!(
-                "can not set parents"
-            )))));
+                err::ErrorKind::Other,
+                format!("can not set parents"),
+            ))));
         }
         let mut path = path.clone();
         Box::pin(async move {
@@ -371,9 +370,9 @@ where
 
         if path.step_v.last().unwrap().arrow != "->" {
             return Box::pin(future::ready(Err(err::Error::new(
-                err::ErrorKind::Other, format!(
-                "can not set parents"
-            )))));
+                err::ErrorKind::Other,
+                format!("can not set parents"),
+            ))));
         }
 
         Box::pin(async move {
@@ -469,6 +468,12 @@ where
                 "while1" => {
                     self.while1(input).await?;
                     Ok(vec![])
+                }
+                "get_code_v" => {
+                    let root_v = self.get(input).await?;
+                    let space_v = self.get(input1).await?;
+
+                    self.get_code_v(&root_v[0], &space_v[0]).await
                 }
                 _ => {
                     self.global
