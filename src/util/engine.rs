@@ -3,7 +3,7 @@ use std::{future, pin::Pin};
 use crate::{err, util::Path};
 
 use super::{
-    data::{AsDataManager, MemDataManager},
+    data::{AsDataManager, Fu, MemDataManager},
     func, PathPart,
 };
 
@@ -88,7 +88,7 @@ pub trait AsEdgeEngine {
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 [String],
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -110,7 +110,7 @@ where
     fn execute_script<'a, 'a1, 'f>(
         &'a mut self,
         script: &'a1 [String],
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -205,7 +205,7 @@ where
     pub fn while1<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -236,7 +236,7 @@ where
     pub fn while0<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -265,36 +265,44 @@ where
     }
 
     /// # Convert temp path to gloabl path.
-    #[async_recursion::async_recursion]
-    pub async fn temp_2_global(&self, path: &Path) -> err::Result<Path> {
-        match path.first_part() {
-            PathPart::Pure(part_path) => {
-                let item_v = self.global.get(&part_path).await?;
+    pub fn temp_2_global<'a, 'a1, 'f>(
+        &'a self,
+        path: &'a1 Path,
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Path>> + 'f>>
+    where
+        'a: 'f,
+        'a1: 'f,
+    {
+        Box::pin(async move {
+            match path.first_part() {
+                PathPart::Pure(part_path) => {
+                    let item_v = self.global.get(&part_path).await?;
 
-                self.temp_2_global(&Path {
-                    root_v: item_v,
-                    step_v: path.step_v[part_path.step_v.len()..].to_vec(),
-                })
-                .await
-            }
-            PathPart::Temp(part_path) => {
-                let item_v = self.temp.get(&part_path).await?;
+                    self.temp_2_global(&Path {
+                        root_v: item_v,
+                        step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                    })
+                    .await
+                }
+                PathPart::Temp(part_path) => {
+                    let item_v = self.temp.get(&part_path).await?;
 
-                self.temp_2_global(&Path {
-                    root_v: item_v,
-                    step_v: path.step_v[part_path.step_v.len()..].to_vec(),
-                })
-                .await
+                    self.temp_2_global(&Path {
+                        root_v: item_v,
+                        step_v: path.step_v[part_path.step_v.len()..].to_vec(),
+                    })
+                    .await
+                }
+                PathPart::EntirePure => Ok(path.clone()),
+                PathPart::EntireTemp => {
+                    let item_v = self.temp.get(&path).await?;
+                    Ok(Path {
+                        root_v: item_v,
+                        step_v: vec![],
+                    })
+                }
             }
-            PathPart::EntirePure => Ok(path.clone()),
-            PathPart::EntireTemp => {
-                let item_v = self.temp.get(&path).await?;
-                Ok(Path {
-                    root_v: item_v,
-                    step_v: vec![],
-                })
-            }
-        }
+        })
     }
 }
 
@@ -310,7 +318,7 @@ where
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -359,7 +367,7 @@ where
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -412,7 +420,7 @@ where
     fn get<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -431,7 +439,7 @@ where
         &'a self,
         root: &'a1 str,
         space: &'a2 str,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -451,7 +459,7 @@ where
         func: &'a1 str,
         input: &'a2 Path,
         input1: &'a3 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -494,7 +502,7 @@ where
         func: &'a2 str,
         input: &'a3 Path,
         input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,

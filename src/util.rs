@@ -201,9 +201,9 @@ pub mod data;
 pub mod engine;
 pub mod mem_table;
 
-use std::{future::Future, pin::Pin};
+use std::pin::Pin;
 
-use data::AsDataManager;
+use data::{AsDataManager, Fu};
 
 use crate::err;
 
@@ -211,7 +211,7 @@ pub(crate) fn dump<'a1, 'a2, 'a3, 'f, DM>(
     dm: &'a1 DM,
     root: &'a2 str,
     space: &'a3 str,
-) -> Pin<Box<impl Future<Output = err::Result<json::JsonValue>> + Send + 'f>>
+) -> Pin<Box<impl Fu<Output = err::Result<json::JsonValue>> + 'f>>
 where
     'a1: 'f,
     'a2: 'f,

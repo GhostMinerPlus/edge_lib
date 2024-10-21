@@ -10,6 +10,18 @@ mod mem;
 
 pub use mem::*;
 
+#[cfg(target_family = "wasm")]
+pub trait Fu: Future {}
+
+#[cfg(target_family = "wasm")]
+impl<T: Future> Fu for T {}
+
+#[cfg(not(target_family = "wasm"))]
+pub trait Fu: Future + Send {}
+
+#[cfg(not(target_family = "wasm"))]
+impl<T: Future + Send> Fu for T {}
+
 pub type Auth = Option<PermissionPair>;
 
 #[derive(Clone)]
@@ -26,7 +38,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -36,7 +48,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -45,7 +57,7 @@ pub trait AsDataManager: Send + Sync {
     fn get<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f;
@@ -54,7 +66,7 @@ pub trait AsDataManager: Send + Sync {
         &'a self,
         root: &'a1 str,
         space: &'a2 str,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -66,7 +78,7 @@ pub trait AsDataManager: Send + Sync {
         func: &'a2 str,
         input: &'a3 Path,
         input1: &'a4 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -86,7 +98,7 @@ pub trait AsDataManager: Send + Sync {
         func: &'a1 str,
         input: &'a2 Path,
         input1: &'a3 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -103,7 +115,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         addr: &'b Path,
         paper: &'c str,
-    ) -> Pin<Box<dyn Future<Output = err::Result<json::JsonValue>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<json::JsonValue>> + 'f>>
     where
         'a: 'f,
         'b: 'f,
@@ -125,7 +137,7 @@ pub trait AsDataManager: Send + Sync {
         &'a mut self,
         data: &'a1 json::JsonValue,
         addr: &'a2 Path,
-    ) -> Pin<Box<dyn Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,

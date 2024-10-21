@@ -4,7 +4,7 @@ use std::{future, pin::Pin};
 use edge_lib::{
     err,
     util::{
-        data::{AsDataManager, Auth},
+        data::{AsDataManager, Auth, Fu},
         Path,
     },
 };
@@ -46,7 +46,7 @@ impl AsDataManager for SqliteDataManager {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -78,7 +78,7 @@ impl AsDataManager for SqliteDataManager {
         &'a mut self,
         path: &'a1 Path,
         item_v: Vec<String>,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<()>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<()>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -118,7 +118,7 @@ impl AsDataManager for SqliteDataManager {
     fn get<'a, 'a1, 'f>(
         &'a self,
         path: &'a1 Path,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
@@ -146,7 +146,7 @@ impl AsDataManager for SqliteDataManager {
         &'a self,
         root: &'a1 str,
         space: &'a2 str,
-    ) -> Pin<Box<dyn std::future::Future<Output = err::Result<Vec<String>>> + Send + 'f>>
+    ) -> Pin<Box<dyn Fu<Output = err::Result<Vec<String>>> + 'f>>
     where
         'a: 'f,
         'a1: 'f,
