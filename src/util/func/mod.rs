@@ -346,14 +346,14 @@ pub async fn new(
     let input_item_v = dm.get(input).await?;
     let input1_item_v = dm.get(input1).await?;
     if min(input_item_v.len(), input1_item_v.len()) != 1 {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             format!("need 1 but not"),
         ));
     }
     let sz = input_item_v[0]
         .parse::<i64>()
-        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| moon_err::Error::new(err::ErrorKind::RuntimeError, e.to_string()))?;
     let mut output_item_v = Vec::with_capacity(sz as usize);
     for _ in 0..sz {
         output_item_v.push(input1_item_v[0].clone());
@@ -370,14 +370,14 @@ pub async fn line(
 ) -> err::Result<()> {
     let input_item_v = dm.get(input).await?;
     if input_item_v.len() != 1 {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             format!("need 1 but not"),
         ));
     }
     let sz = input_item_v[0]
         .parse::<i64>()
-        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| moon_err::Error::new(err::ErrorKind::RuntimeError, e.to_string()))?;
     let mut output_item_v = Vec::with_capacity(sz as usize);
     for i in 0..sz {
         output_item_v.push(i.to_string());
@@ -394,14 +394,14 @@ pub async fn rand(
 ) -> err::Result<()> {
     let input_item_v = dm.get(input).await?;
     if input_item_v.len() != 1 {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             format!("need 1 but not, when checking",),
         ));
     }
     let sz = input_item_v[0]
         .parse::<i64>()
-        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| moon_err::Error::new(err::ErrorKind::RuntimeError, e.to_string()))?;
     let mut output_item_v = Vec::with_capacity(sz as usize);
     for _ in 0..sz {
         let r = random::<f64>();
@@ -448,24 +448,24 @@ pub async fn slice(
 ) -> err::Result<()> {
     let input_item_v = dm.get(input).await?;
     if input_item_v.is_empty() {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             "no input\nwhen slice".to_string(),
         ));
     }
     let input1_item_v = dm.get(input1).await?;
     if input1_item_v.len() < 2 {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             "no input1\nwhen slice".to_string(),
         ));
     }
     let start = input1_item_v[0]
         .parse::<usize>()
-        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| moon_err::Error::new(err::ErrorKind::RuntimeError, e.to_string()))?;
     let end = input1_item_v[1]
         .parse::<usize>()
-        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| moon_err::Error::new(err::ErrorKind::RuntimeError, e.to_string()))?;
     dm.set(output, input_item_v[start..end].to_vec()).await
 }
 
@@ -478,8 +478,8 @@ pub async fn sort(
     let input_item_v = dm.get(input).await?;
     let order_v = dm.get(input1).await?;
     if input_item_v.len() != order_v.len() {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             "not the same length\nwhen sort".to_string(),
         ));
     }
@@ -510,8 +510,8 @@ pub async fn sort_s(
     let input_item_v = dm.get(input).await?;
     let order_v = dm.get(input1).await?;
     if input_item_v.len() != order_v.len() {
-        return Err(err::Error::new(
-            err::ErrorKind::Other,
+        return Err(moon_err::Error::new(
+            err::ErrorKind::RuntimeError,
             "not the same length\nwhen sort".to_string(),
         ));
     }

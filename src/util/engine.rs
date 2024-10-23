@@ -22,8 +22,8 @@ mod dep {
 
             let word_v: Vec<&str> = line.split(' ').collect();
             if word_v.len() < 4 {
-                return Err(err::Error::new(
-                    err::ErrorKind::Other,
+                return Err(moon_err::Error::new(
+                    err::ErrorKind::SyntaxError,
                     format!("{line}: less than 4 words in a line"),
                 ));
             }
@@ -49,8 +49,8 @@ mod dep {
                         input1: Path::from_str("$->$:temp"),
                     });
                 } else {
-                    return Err(err::Error::new(
-                        err::ErrorKind::Other,
+                    return Err(moon_err::Error::new(
+                        err::ErrorKind::SyntaxError,
                         format!("when parse_script:\n\tunknown operator"),
                     ));
                 }
@@ -125,8 +125,8 @@ where
                 dep::unwrap_inc(inc);
                 let func_name_v = self.get(&inc.function).await?;
                 if func_name_v.is_empty() {
-                    return Err(err::Error::new(
-                        err::ErrorKind::Other,
+                    return Err(moon_err::Error::new(
+                        err::ErrorKind::RuntimeError,
                         format!("no funtion: {}\nat invoke_inc", inc.function.to_string()),
                     ));
                 }
@@ -327,8 +327,8 @@ where
             return Box::pin(future::ready(Ok(())));
         }
         if path.step_v.last().unwrap().arrow != "->" {
-            return Box::pin(future::ready(Err(err::Error::new(
-                err::ErrorKind::Other,
+            return Box::pin(future::ready(Err(moon_err::Error::new(
+                err::ErrorKind::RuntimeError,
                 format!("can not set parents"),
             ))));
         }
@@ -377,8 +377,8 @@ where
         }
 
         if path.step_v.last().unwrap().arrow != "->" {
-            return Box::pin(future::ready(Err(err::Error::new(
-                err::ErrorKind::Other,
+            return Box::pin(future::ready(Err(moon_err::Error::new(
+                err::ErrorKind::RuntimeError,
                 format!("can not set parents"),
             ))));
         }

@@ -101,7 +101,7 @@ impl AsDataManager for MemDataManager {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
-                    return Err(err::Error::new(
+                    return Err(moon_err::Error::new(
                         err::ErrorKind::PermissionDenied,
                         format!("{}", step.paper),
                     ));
@@ -135,7 +135,7 @@ impl AsDataManager for MemDataManager {
             let step = path.step_v.pop().unwrap();
             if let Some(auth) = &self.auth {
                 if !auth.writer.contains(&step.paper) {
-                    return Err(err::Error::new(
+                    return Err(moon_err::Error::new(
                         err::ErrorKind::PermissionDenied,
                         format!("{}", step.paper),
                     ));
@@ -174,7 +174,7 @@ impl AsDataManager for MemDataManager {
                 let step = path.step_v.remove(0);
                 if let Some(auth) = &self.auth {
                     if !auth.writer.contains(&step.paper) && !auth.reader.contains(&step.paper) {
-                        return Err(err::Error::new(
+                        return Err(moon_err::Error::new(
                             err::ErrorKind::PermissionDenied,
                             format!("{}", step.paper),
                         ));

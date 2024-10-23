@@ -105,7 +105,7 @@ pub trait AsDataManager: Send + Sync {
         'a2: 'f,
         'a3: 'f,
     {
-        Box::pin(future::ready(Err(err::Error::new(
+        Box::pin(future::ready(Err(moon_err::Error::new(
             err::ErrorKind::NotFound,
             format!("function '{func}' is not found!"),
         ))))

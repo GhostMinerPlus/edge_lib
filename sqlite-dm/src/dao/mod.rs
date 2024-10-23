@@ -17,7 +17,9 @@ mod main {
             .bind(code)
             .execute(&pool)
             .await
-            .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| {
+                moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+            })?;
         Ok(())
     }
 
@@ -105,10 +107,9 @@ pub async fn insert_edge(
     for target in target_v {
         statement = statement.bind(source).bind(paper).bind(code).bind(target);
     }
-    statement
-        .execute(&pool)
-        .await
-        .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+    statement.execute(&pool).await.map_err(|e| {
+        moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+    })?;
     Ok(())
 }
 
@@ -122,10 +123,9 @@ pub async fn get(pool: Pool<Sqlite>, path: &Path) -> err::Result<Vec<String>> {
         for step in &path.step_v {
             stm = stm.bind(&step.paper).bind(&step.code);
         }
-        let rs = stm
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?;
+        let rs = stm.fetch_all(&pool).await.map_err(|e| {
+            moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+        })?;
         for row in rs {
             arr.push(row.get(0));
         }
@@ -150,7 +150,9 @@ pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> err::Res
             .bind(paper)
             .fetch_all(&pool)
             .await
-            .map_err(|e| err::Error::new(err::ErrorKind::Other, e.to_string()))?
+            .map_err(|e| {
+                moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+            })?
             .iter()
             .map(|row| row.get(0))
             .collect(),
