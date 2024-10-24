@@ -18,7 +18,13 @@ mod main {
             .execute(&pool)
             .await
             .map_err(|e| {
-                moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+                log::error!("{e}\nat delete_edge_with_source_code");
+
+                moon_err::Error::new(
+                    err::ErrorKind::RuntimeError,
+                    e.to_string(),
+                    format!("at delete_edge_with_source_code"),
+                )
             })?;
         Ok(())
     }
@@ -108,7 +114,13 @@ pub async fn insert_edge(
         statement = statement.bind(source).bind(paper).bind(code).bind(target);
     }
     statement.execute(&pool).await.map_err(|e| {
-        moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+        log::error!("{e}\nat insert_edge");
+
+        moon_err::Error::new(
+            err::ErrorKind::Other(format!("SqlxError")),
+            e.to_string(),
+            format!("at insert_edge"),
+        )
     })?;
     Ok(())
 }
@@ -124,7 +136,9 @@ pub async fn get(pool: Pool<Sqlite>, path: &Path) -> err::Result<Vec<String>> {
             stm = stm.bind(&step.paper).bind(&step.code);
         }
         let rs = stm.fetch_all(&pool).await.map_err(|e| {
-            moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+            log::error!("{e}\n at get");
+
+            moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string(), format!("at get"))
         })?;
         for row in rs {
             arr.push(row.get(0));
@@ -151,7 +165,9 @@ pub async fn get_code_v(pool: Pool<Sqlite>, root: &str, paper: &str) -> err::Res
             .fetch_all(&pool)
             .await
             .map_err(|e| {
-                moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string())
+                log::error!("{e}\n at get_code_v");
+
+                moon_err::Error::new(err::ErrorKind::Other(format!("SqlxError")), e.to_string(), format!("get_code_v"))
             })?
             .iter()
             .map(|row| row.get(0))

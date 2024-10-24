@@ -25,6 +25,7 @@ mod dep {
                 return Err(moon_err::Error::new(
                     err::ErrorKind::SyntaxError,
                     format!("{line}: less than 4 words in a line"),
+                    format!("at parse_script1"),
                 ));
             }
             if word_v.len() == 5 {
@@ -52,6 +53,7 @@ mod dep {
                     return Err(moon_err::Error::new(
                         err::ErrorKind::SyntaxError,
                         format!("when parse_script:\n\tunknown operator"),
+                        format!("at parse_script1"),
                     ));
                 }
                 continue;
@@ -128,6 +130,7 @@ where
                     return Err(moon_err::Error::new(
                         err::ErrorKind::RuntimeError,
                         format!("no funtion: {}\nat invoke_inc", inc.function.to_string()),
+                        format!("at execute_script"),
                     ));
                 }
 
@@ -135,7 +138,7 @@ where
                     .call(&inc.output, &func_name_v[0], &inc.input, &inc.input1)
                     .await
                 {
-                    if let err::ErrorKind::NotFound = e.kind() {
+                    if let err::ErrorKind::NotFound = e.first().0 {
                         let input_item_v = self.get(&inc.input).await?;
                         let input1_item_v = self.get(&inc.input1).await?;
 
@@ -330,6 +333,7 @@ where
             return Box::pin(future::ready(Err(moon_err::Error::new(
                 err::ErrorKind::RuntimeError,
                 format!("can not set parents"),
+                format!("at append"),
             ))));
         }
         let mut path = path.clone();
@@ -380,6 +384,7 @@ where
             return Box::pin(future::ready(Err(moon_err::Error::new(
                 err::ErrorKind::RuntimeError,
                 format!("can not set parents"),
+                format!("at set"),
             ))));
         }
 

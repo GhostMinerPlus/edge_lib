@@ -104,6 +104,7 @@ impl AsDataManager for MemDataManager {
                     return Err(moon_err::Error::new(
                         err::ErrorKind::PermissionDenied,
                         format!("{}", step.paper),
+                        format!("at append"),
                     ));
                 }
             }
@@ -138,6 +139,7 @@ impl AsDataManager for MemDataManager {
                     return Err(moon_err::Error::new(
                         err::ErrorKind::PermissionDenied,
                         format!("{}", step.paper),
+                        format!("at set"),
                     ));
                 }
             }
@@ -177,6 +179,7 @@ impl AsDataManager for MemDataManager {
                         return Err(moon_err::Error::new(
                             err::ErrorKind::PermissionDenied,
                             format!("{}", step.paper),
+                            format!("at get"),
                         ));
                     }
                 }

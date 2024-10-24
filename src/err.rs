@@ -10,7 +10,7 @@ pub enum ErrorKind {
     /// Syntax error
     SyntaxError,
     /// RuntimeError
-    RuntimeError
+    RuntimeError,
 }
 
 pub type Result<T> = std::result::Result<T, moon_err::Error<ErrorKind>>;
