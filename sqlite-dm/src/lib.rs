@@ -1,4 +1,4 @@
-use sqlx::{Pool, Sqlite};
+use sqlx::{sqlite::SqliteConnectOptions, Pool, Sqlite};
 use std::{future, pin::Pin};
 
 use edge_lib::{
@@ -29,6 +29,13 @@ pub struct SqliteDataManager {
 
 impl SqliteDataManager {
     pub fn new(pool: Pool<Sqlite>, auth: Auth) -> Self {
+        Self { pool, auth }
+    }
+
+    pub async fn new_with_file(uri: &str, auth: Auth) -> Self {
+        let pool = sqlx::SqlitePool::connect_with(SqliteConnectOptions::new().filename(uri))
+            .await
+            .unwrap();
         Self { pool, auth }
     }
 
